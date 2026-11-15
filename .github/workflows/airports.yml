@@ -66,17 +66,17 @@ jobs:
           let prev = null; try { prev = JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch {}
           let out;
           try {
-            const r = await fetch('https://nasstatus.faa.gov/api/airport-status-information', { headers: { accept: 'application/xml' }, signal: AbortSignal.timeout(30000) });
+            const r = await fetch('https://nasstatus.faa.gov/api/airport-status-information', { headers: { accept: 'application/xml', origin: 'https://mheir.github.io' }, signal: AbortSignal.timeout(30000) });
             if (!r.ok) throw new Error('HTTP ' + r.status);
             const xml = await r.text();
             if (!/AIRPORT_STATUS_INFORMATION/.test(xml)) throw new Error('unexpected response');
-            out = { ok: true, source: 'https://nasstatus.faa.gov/api/airport-status-information', checked: new Date().toISOString(), ...parseFAA(xml) };
+            out = { ok: true, source: 'https://nasstatus.faa.gov/api/airport-status-information', checked: new Date().toISOString(), browser_ok: r.headers.get('access-control-allow-origin') || '', ...parseFAA(xml) };
           } catch (e) {
             console.log('FAA fetch failed:', e.message);
             if (prev && prev.ok) { console.log('Keeping the last good list.'); process.exit(0); }
             out = { ok: false, checked: new Date().toISOString(), error: String(e.message).slice(0, 120), events: [], history: (prev && prev.history) || [] };
           }
-          const same = prev && prev.ok === out.ok && JSON.stringify(prev.events) === JSON.stringify(out.events);
+          const same = prev && prev.ok === out.ok && prev.browser_ok === out.browser_ok && JSON.stringify(prev.events) === JSON.stringify(out.events);
           const age = prev && prev.checked ? Date.now() - Date.parse(prev.checked) : Infinity;
           if (same && age < 55 * 60000) { console.log('No change.'); process.exit(0); }
           // Nationwide trend: how many airports have ground stops, ground delay programs or delays.
