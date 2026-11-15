@@ -4,9 +4,15 @@ name: Refresh airport status
 # programs, arrival and departure delays, closures) into airports.json so the
 # trip page can show it, with a 72-hour history of nationwide counts for the
 # trend line. No key or account needed.
+#
+# GitHub's cron schedule turned out to be unreliable here (it never fired), so
+# each run stays up for about 5h40m, checking the FAA every 10 minutes, and then
+# starts the next run itself. The cron line stays only as a backup to restart the
+# chain if it ever breaks. The page calls the list stale after 30 minutes, so a
+# fresh copy is committed whenever it changes or at least every 20 minutes.
 on:
   schedule:
-    - cron: '7,22,37,52 * * * *'
+    - cron: '7,37 * * * *'
   workflow_dispatch:
   push:
     branches: [main]
@@ -14,6 +20,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: airports
@@ -22,12 +29,12 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 355
     steps:
       - name: Stop after the trip
         id: window
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ] && [ "$(date -u +%Y%m%d)" -gt 20261201 ]; then
+          if [ "${{ github.event_name }}" != "push" ] && [ "$(date -u +%Y%m%d)" -gt 20261201 ]; then
             echo "Trip is over; nothing to do."; echo "go=no" >> "$GITHUB_OUTPUT"
           else echo "go=yes" >> "$GITHUB_OUTPUT"; fi
 
@@ -39,7 +46,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Fetch FAA airport status
+      - name: Write the FAA fetch script
         if: steps.window.outputs.go == 'yes'
         run: |
           cat > /tmp/faa.mjs <<'EOF'
@@ -78,7 +85,7 @@ jobs:
           }
           const same = prev && prev.ok === out.ok && prev.browser_ok === out.browser_ok && JSON.stringify(prev.events) === JSON.stringify(out.events);
           const age = prev && prev.checked ? Date.now() - Date.parse(prev.checked) : Infinity;
-          if (same && age < 55 * 60000) { console.log('No change.'); process.exit(0); }
+          if (same && age < 18 * 60000) { console.log('No change.'); process.exit(0); }
           // Nationwide trend: how many airports have ground stops, ground delay programs or delays.
           const kind = t => /ground stop/i.test(t) ? 'gs' : /ground delay/i.test(t) ? 'gdp' : /arrival|departure/i.test(t) ? 'dl' : '';
           const sets = { gs: new Set(), gdp: new Set(), dl: new Set() };
@@ -90,18 +97,32 @@ jobs:
           fs.writeFileSync(FILE, JSON.stringify(out) + '\n');
           console.log('Wrote', out.events.length, 'events');
           EOF
-          node /tmp/faa.mjs
 
-      - name: Commit
+      - name: Refresh every 10 minutes for about 5h40m
         if: steps.window.outputs.go == 'yes'
         run: |
           git config user.name "Disney Bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add airports.json 2>/dev/null || true
-          if git diff --cached --quiet; then echo "Nothing to commit"; exit 0; fi
-          git commit -q -m "Update airport status"
-          for i in 1 2 3 4; do
-            git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0
-            sleep $((i*5))
+          end=$(( $(date +%s) + 340*60 ))
+          while :; do
+            git pull -q --rebase origin main || echo "pull failed; using the local copy"
+            node /tmp/faa.mjs || echo "fetch script failed"
+            git add airports.json 2>/dev/null || true
+            if ! git diff --cached --quiet; then
+              git commit -q -m "Update airport status"
+              for i in 1 2 3 4; do
+                git pull -q --rebase origin main && git push -q origin HEAD:main && break
+                sleep $((i*5))
+              done
+            else
+              echo "Nothing to commit"
+            fi
+            [ $(( $(date +%s) + 600 )) -ge $end ] && break
+            sleep 600
           done
-          exit 1
+
+      - name: Start the next run
+        if: ${{ !cancelled() && steps.window.outputs.go == 'yes' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run airports.yml --repo "${{ github.repository }}" --ref main
