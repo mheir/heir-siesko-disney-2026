@@ -2,7 +2,8 @@ name: Refresh airport status
 
 # Copies the FAA's nationwide airport status list (ground stops, ground delay
 # programs, arrival and departure delays, closures) into airports.json so the
-# trip page can show it. No key or account needed.
+# trip page can show it, with a 72-hour history of nationwide counts for the
+# trend line. No key or account needed.
 on:
   schedule:
     - cron: '7,22,37,52 * * * *'
@@ -73,11 +74,19 @@ jobs:
           } catch (e) {
             console.log('FAA fetch failed:', e.message);
             if (prev && prev.ok) { console.log('Keeping the last good list.'); process.exit(0); }
-            out = { ok: false, checked: new Date().toISOString(), error: String(e.message).slice(0, 120), events: [] };
+            out = { ok: false, checked: new Date().toISOString(), error: String(e.message).slice(0, 120), events: [], history: (prev && prev.history) || [] };
           }
           const same = prev && prev.ok === out.ok && JSON.stringify(prev.events) === JSON.stringify(out.events);
           const age = prev && prev.checked ? Date.now() - Date.parse(prev.checked) : Infinity;
           if (same && age < 55 * 60000) { console.log('No change.'); process.exit(0); }
+          // Nationwide trend: how many airports have ground stops, ground delay programs or delays.
+          const kind = t => /ground stop/i.test(t) ? 'gs' : /ground delay/i.test(t) ? 'gdp' : /arrival|departure/i.test(t) ? 'dl' : '';
+          const sets = { gs: new Set(), gdp: new Set(), dl: new Set() };
+          for (const x of out.events) { const k = kind(x.type); if (k) sets[k].add(x.arpt); }
+          const cutoff = Date.now() - 72 * 3600000;
+          const history = ((prev && prev.history) || []).filter(h => Date.parse(h.t) > cutoff);
+          if (out.ok) history.push({ t: out.checked, gs: sets.gs.size, gdp: sets.gdp.size, dl: sets.dl.size });
+          out.history = history;
           fs.writeFileSync(FILE, JSON.stringify(out) + '\n');
           console.log('Wrote', out.events.length, 'events');
           EOF
