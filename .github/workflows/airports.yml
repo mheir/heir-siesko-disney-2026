@@ -1,0 +1,98 @@
+name: Refresh airport status
+
+# Copies the FAA's nationwide airport status list (ground stops, ground delay
+# programs, arrival and departure delays, closures) into airports.json so the
+# trip page can show it. No key or account needed.
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/airports.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: airports
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Stop after the trip
+        id: window
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$(date -u +%Y%m%d)" -gt 20261201 ]; then
+            echo "Trip is over; nothing to do."; echo "go=no" >> "$GITHUB_OUTPUT"
+          else echo "go=yes" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/checkout@v4
+        if: steps.window.outputs.go == 'yes'
+
+      - uses: actions/setup-node@v4
+        if: steps.window.outputs.go == 'yes'
+        with:
+          node-version: '20'
+
+      - name: Fetch FAA airport status
+        if: steps.window.outputs.go == 'yes'
+        run: |
+          cat > /tmp/faa.mjs <<'EOF'
+          import fs from 'node:fs';
+          const FILE = 'airports.json';
+          const tx = s => s.replace(/\s+/g, ' ').trim();
+          function parseFAA(xml) {
+            const ev = [];
+            const up = (xml.match(/<Update_Time>([^<]*)<\/Update_Time>/) || [])[1] || '';
+            for (const blk of xml.match(/<Delay_type>[\s\S]*?<\/Delay_type>/g) || []) {
+              const name = tx((blk.match(/<Name>([^<]*)<\/Name>/) || [])[1] || '');
+              const re = /<(\w+)(?:\s[^>]*)?>\s*<ARPT>([^<]*)<\/ARPT>([\s\S]*?)<\/\1>/g; let m;
+              while ((m = re.exec(blk))) {
+                const base = { type: name, arpt: tx(m[2]).toUpperCase() }; const body = m[3];
+                const leaf = s => { const o = {}; s.replace(/<(\w+)(?:\s[^>]*)?>([^<]*)<\/\1>/g, (_, k, v) => { if (tx(v)) o[k] = tx(v); return ''; }); return o; };
+                const AD = /<Arrival_Departure\b[^>]*>[\s\S]*?<\/Arrival_Departure>/g;
+                const ads = body.match(AD); const rest = leaf(body.replace(AD, ''));
+                if (ads) for (const a of ads) ev.push({ ...base, ...rest, dir: (a.match(/Type="([^"]*)"/) || [])[1] || '', ...leaf(a) });
+                else ev.push({ ...base, ...rest });
+              }
+            }
+            return { faa_updated: up, events: ev };
+          }
+          let prev = null; try { prev = JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch {}
+          let out;
+          try {
+            const r = await fetch('https://nasstatus.faa.gov/api/airport-status-information', { headers: { accept: 'application/xml' }, signal: AbortSignal.timeout(30000) });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const xml = await r.text();
+            if (!/AIRPORT_STATUS_INFORMATION/.test(xml)) throw new Error('unexpected response');
+            out = { ok: true, source: 'https://nasstatus.faa.gov/api/airport-status-information', checked: new Date().toISOString(), ...parseFAA(xml) };
+          } catch (e) {
+            console.log('FAA fetch failed:', e.message);
+            if (prev && prev.ok) { console.log('Keeping the last good list.'); process.exit(0); }
+            out = { ok: false, checked: new Date().toISOString(), error: String(e.message).slice(0, 120), events: [] };
+          }
+          const same = prev && prev.ok === out.ok && JSON.stringify(prev.events) === JSON.stringify(out.events);
+          const age = prev && prev.checked ? Date.now() - Date.parse(prev.checked) : Infinity;
+          if (same && age < 55 * 60000) { console.log('No change.'); process.exit(0); }
+          fs.writeFileSync(FILE, JSON.stringify(out) + '\n');
+          console.log('Wrote', out.events.length, 'events');
+          EOF
+          node /tmp/faa.mjs
+
+      - name: Commit
+        if: steps.window.outputs.go == 'yes'
+        run: |
+          git config user.name "Disney Bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add airports.json 2>/dev/null || true
+          if git diff --cached --quiet; then echo "Nothing to commit"; exit 0; fi
+          git commit -q -m "Update airport status"
+          for i in 1 2 3 4; do
+            git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0
+            sleep $((i*5))
+          done
+          exit 1
