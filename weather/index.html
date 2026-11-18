@@ -148,8 +148,8 @@ details.more summary{cursor:pointer;color:var(--muted);font-size:.85rem}
 .p2{background:var(--bad-bg);color:var(--bad)}
 .pna{background:var(--na-bg);color:var(--muted)}
 .reasons{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px;font-size:.84rem;line-height:1.35}
-.reasons li{display:flex;gap:6px}
-.reasons li::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;margin-top:.45em;background:var(--muted)}
+.reasons li{position:relative;padding-left:13px}
+.reasons li::before{content:"";position:absolute;left:0;top:.5em;width:6px;height:6px;border-radius:50%;background:var(--muted)}
 .reasons li.l2::before{background:var(--bad)}
 .reasons li.l1::before{background:var(--warn)}
 .reasons li.l0::before{background:var(--good)}
@@ -195,6 +195,7 @@ table.matrix td.m0{background:var(--good-bg);color:var(--good)} table.matrix td.
 .daybtn{flex:none;appearance:none;background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:8px 12px;cursor:pointer;text-align:left;display:flex;flex-direction:column;gap:4px;min-width:118px}
 .daybtn[aria-pressed="true"]{border-color:var(--accent)}
 .daybtn b{font:600 .92rem/1.1 var(--f-display)}
+.daybtn .pill{align-self:flex-start}
 .daybtn small{color:var(--muted);font-size:.75rem;line-height:1.25}
 #map{height:280px;border-radius:var(--r);border:1px solid var(--line-2);overflow:hidden;background:var(--surface-2);z-index:0}
 .timeline{display:flex;flex-direction:column;gap:0;position:relative}
