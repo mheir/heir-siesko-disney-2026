@@ -415,10 +415,11 @@ async function fetchForecast(points, {aviation, start, end}) {
   let lastErr;
   for (const host of FORECAST_HOSTS) {
     try {
-      const d = await getJSON(`${host}?${p}`, {cache: 20 * 60e3, timeout: 30000});
+      const d = await getJSON(`${host}?${p}`, {cache: 20 * 60e3, timeout: 60000});
       return Array.isArray(d) ? d : [d];
     } catch (e) { lastErr = e; if (e.status === 400) break; }
   }
+  if (lastErr && lastErr.name === 'AbortError') lastErr = new Error('the forecast service took too long to answer');
   throw lastErr;
 }
 
@@ -554,14 +555,15 @@ function hourRec(loc, i) {
   return h;
 }
 /* Icing: cloudy layers between 0 and -15 C below 18,000 ft */
-function icingBand(h) {
-  const lv = h.levels.filter(l => l.cc != null && l.cc >= 50 && l.tC != null && l.tC <= 0.5 && l.tC >= -15 && l.aglFt > 0 && l.mslFt < 18500);
+function icingBand(h, topFt = 18500) {
+  const lv = h.levels.filter(l => l.cc != null && l.cc >= 50 && l.tC != null && l.tC <= 0.5 && l.tC >= -15 && l.aglFt > 0 && l.mslFt < topFt);
   if (!lv.length) return null;
   const lo = Math.min(...lv.map(l => l.mslFt)), hi = Math.max(...lv.map(l => l.mslFt));
   const dense = lv.some(l => l.cc >= 80);
   return {lo, hi, dense};
 }
 const kft = ft => ft >= 1000 ? `${Math.round(ft / 1000)}k` : `${Math.round(ft / 100) * 100}`;
+const bandTxt = b => kft(b.lo) === kft(b.hi) ? `near ${kft(b.lo)} ft` : `${kft(b.lo)}–${kft(b.hi)} ft`;
 const ceilTxt = c => !isFinite(c) ? 'none' : `${fmtInt(Math.round(c / 100) * 100)} ft`;
 const visTxt = v => v >= 10 ? '10+ sm' : v >= 3 ? `${Math.round(v)} sm` : `${round(v, 1)} sm`;
 function levelFor(altFt) { let best = 850, bd = Infinity; for (const L of LEVELS) { const d = Math.abs(LEVEL_FT[L] - altFt); if (d < bd) { bd = d; best = L; } } return best; }
@@ -673,8 +675,9 @@ const MODES = {
           o.push(R(likely ? 2 : 1, 'ice', `Icing ${likely ? 'likely' : 'possible'} at cruise (${Math.round(l.tC)}°C in cloud)`, l.cc - l.tC));
         }
       } else {
-        const ib = icingBand(h);
-        if (ib) { const likely = ib.dense && (h.precipIn > 0.005 || WX.snow(h.code)); o.push(R(likely ? 2 : 1, 'ice', `Icing ${likely ? 'likely' : 'possible'} in cloud ${kft(ib.lo)}–${kft(ib.hi)} ft`, (likely ? 100 : 0) + (ib.hi - ib.lo) / 1000)); }
+        // at airports on a route, only the layers you climb or descend through matter
+        const ib = icingBand(h, ctx.cruiseFt ? ctx.cruiseFt + 2500 : 18500);
+        if (ib) { const likely = ib.dense && (h.precipIn > 0.005 || WX.snow(h.code)); o.push(R(likely ? 2 : 1, 'ice', `Icing ${likely ? 'likely' : 'possible'} in cloud ${bandTxt(ib)}`, (likely ? 100 : 0) + (ib.hi - ib.lo) / 1000)); }
       }
       if (WX.thunder(h.code)) o.push(R(2, 'storm', 'Thunderstorms', 10));
       else if (h.cape >= 1500 && (h.pop ?? 0) >= 30) o.push(R(1, 'conv', 'Embedded storms possible', h.cape));
@@ -1143,7 +1146,7 @@ function timeline(samples, fcs, stops, dep, avi, path) {
     const isStop = s.stop != null, mid = isStop && s.stop > 0 && s.stop < stops.length - 1;
     const h = recAt(fcs[j], arrive);
     const terminal = isStop;
-    const ctx = {terminal, cruiseL: avi && !terminal ? cruiseL : null};
+    const ctx = {terminal, cruiseL: avi && !terminal ? cruiseL : null, cruiseFt: avi ? r.alt : null};
     const e = h ? evalHour(S.mode, h, ctx) : null;
     out.push({s, t: arrive, h, ...(e || {lv: null, rs: []})});
     if (mid) t += (r.dwell || 0) * 60;
@@ -1254,7 +1257,8 @@ function drawRoute(my) {
   out.push('<div id="map" role="img" aria-label="Route map with risk at each point"></div>');
   // timeline
   out.push(`<p class="section-title">Along the route</p><div class="timeline">${plan.tl.map((x, j) => pointHTML(x, j, plan)).join('')}</div>`);
-  out.push(`<p class="hint">${esc(c.path.note || '')} Times are local to each point. Each point uses the forecast hour closest to when you pass it.</p>`);
+  const enrouteNote = mode === 'ifr' ? ' En route points check icing, storms and winds at your cruise altitude; ceilings and visibility count at the airports.' : '';
+  out.push(`<p class="hint">${esc(c.path.note || '')} Times are local to each point. Each point uses the forecast hour closest to when you pass it.${enrouteNote}</p>`);
   out.push(legendHTML(true));
   $('#results').innerHTML = out.join('');
   $('#results').querySelectorAll('[data-plan]').forEach(b => b.onclick = () => { c.sel = +b.dataset.plan; drawRoute(my); });
