@@ -85,7 +85,7 @@ header.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .field input:focus,.field select:focus{border-color:var(--accent);outline:none}
 .grow{flex:1 1 220px}
 .w-date{flex:1 1 140px;max-width:180px}
-.w-sm{flex:0 1 120px}
+.w-sm{flex:0 1 150px}
 .w-xs{flex:0 1 96px}
 .btn{appearance:none;border:0;border-radius:999px;padding:10px 18px;font-weight:700;cursor:pointer;background:var(--accent);color:var(--accent-ink);white-space:nowrap}
 .btn:hover{filter:brightness(1.06)}
@@ -305,7 +305,7 @@ footer p{margin:0;max-width:75ch}
 
   <footer>
     <p><b>Planning guidance only.</b> These cards are distilled from computer model forecasts and simple rules of thumb. They are not an official weather briefing. Before a flight, get a full briefing from an approved source such as 1800wxbrief.com or ForeFlight, and check NOTAMs and TFRs.</p>
-    <p>Ceilings and flight categories are estimated from model cloud layers and humidity, not observed. Airport METAR and TAF are shown where available. Weather data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0), aviationweather.gov, road routes from OSRM, place names from BigDataCloud.</p>
+    <p>Ceilings and flight categories are estimated from model cloud layers and humidity, not observed. Airport codes work as places, but check the airport's own METAR and TAF too. Weather data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0), road routes from OSRM, place names from BigDataCloud.</p>
   </footer>
 </div>
 
@@ -428,19 +428,6 @@ async function geocodeSearch(q, count = 6) {
     elev: r.elevation,
   }));
 }
-async function airportLookup(code) {
-  const id = code.toUpperCase();
-  const d = await getJSON(`https://aviationweather.gov/api/data/airport?ids=${encodeURIComponent(id)}&format=json`, {cache: 7 * 864e5, timeout: 12000});
-  const a = Array.isArray(d) ? d[0] : null;
-  if (!a || a.lat == null) return null;
-  const rwys = (a.runways || []).map(r => {
-    let hdg = parseFloat(r.alignment);
-    if (!isFinite(hdg)) { const m = String(r.id || '').match(/^(\d{1,2})/); hdg = m ? +m[1] * 10 : NaN; }
-    return isFinite(hdg) ? {id: r.id, hdg} : null;
-  }).filter(Boolean);
-  return {name: a.icaoId || id, sub: titleCase(a.name || ''), lat: +a.lat, lon: +a.lon, elev: a.elev != null ? +a.elev : null, icao: a.icaoId || id, rwys};
-}
-function titleCase(s) { return s.toLowerCase().replace(/\b([a-z])/g, c => c.toUpperCase()).replace(/\bIntl\b/g, 'Intl'); }
 async function reverseName(lat, lon) {
   const key = `rev:${lat.toFixed(2)},${lon.toFixed(2)}`;
   const c = store.get(key); if (c) return c;
@@ -453,12 +440,6 @@ async function reverseName(lat, lon) {
     return out;
   } catch { return ''; }
 }
-async function aviationReports(icao) {
-  const out = {};
-  try { const m = await getJSON(`https://aviationweather.gov/api/data/metar?ids=${icao}&format=json`, {cache: 5 * 60e3, timeout: 10000}); if (m && m[0]) out.metar = m[0]; } catch {}
-  try { const t = await getJSON(`https://aviationweather.gov/api/data/taf?ids=${icao}&format=json`, {cache: 10 * 60e3, timeout: 10000}); if (t && t[0]) out.taf = t[0]; } catch {}
-  return out;
-}
 const COORD_RE = /^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/;
 const CODE_RE = /^\s*([A-Za-z][A-Za-z0-9]{2,3})\s*$/;
 /* resolve free text into a location */
@@ -468,9 +449,12 @@ async function resolvePlace(q) {
   if (c) { const lat = +c[1], lon = +c[2]; if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) { const nm = await reverseName(lat, lon); return {name: nm || `${lat.toFixed(3)}, ${lon.toFixed(3)}`, sub: nm ? `${lat.toFixed(3)}, ${lon.toFixed(3)}` : '', lat, lon}; } }
   const k = q.match(CODE_RE);
   if (k && (q === q.toUpperCase() || q.length === 4)) {
+    // airport identifiers: the place index knows most ICAO codes; try K-prefixed for 3-letter US codes
     const code = k[1].toUpperCase();
-    const tries = code.length === 3 ? ['K' + code, code] : [code];
-    for (const t of tries) { try { const a = await airportLookup(t); if (a) return a; } catch {} }
+    for (const t of code.length === 3 ? ['K' + code, code] : [code]) {
+      const r = await geocodeSearch(t, 1);
+      if (r[0]) return {...r[0], sub: [code, r[0].sub].filter(Boolean).join(' · ')};
+    }
   }
   const r = await geocodeSearch(q, 1);
   return r[0] || null;
@@ -579,14 +563,6 @@ const kft = ft => ft >= 1000 ? `${Math.round(ft / 1000)}k` : `${Math.round(ft / 
 const ceilTxt = c => !isFinite(c) ? 'none' : `${fmtInt(Math.round(c / 100) * 100)} ft`;
 const visTxt = v => v >= 10 ? '10+ sm' : v >= 3 ? `${Math.round(v)} sm` : `${round(v, 1)} sm`;
 function levelFor(altFt) { let best = 850, bd = Infinity; for (const L of LEVELS) { const d = Math.abs(LEVEL_FT[L] - altFt); if (d < bd) { bd = d; best = L; } } return best; }
-function crosswind(h, rwys) {
-  if (!rwys || !rwys.length || h.dir == null) return null;
-  const spd = Math.max(h.windKt, h.gustKt);
-  let best = null;
-  for (const r of rwys) { const xw = Math.abs(spd * Math.sin((h.dir - r.hdg) * RAD)); if (!best || xw < best.xw) best = {xw, id: r.id}; }
-  return best;
-}
-
 /* ============================================================
    Activity modes and their rules.
    Each rule returns {lv: 1|2, k: key, t: text, v: severity} ; notes are lv 0.
@@ -665,9 +641,8 @@ const MODES = {
       else if (WX.snow(h.code)) o.push(R(1, 'snow', 'Snow', h.snowIn));
       if (h.gustKt >= 35) o.push(R(2, 'wind', `Gusts ${Math.round(h.gustKt)} kt`, h.gustKt));
       else if (h.gustKt >= 25) o.push(R(1, 'wind', `Gusts ${Math.round(h.gustKt)} kt`, h.gustKt));
-      else if (h.gustKt - h.windKt >= 15) o.push(R(1, 'wind', `Gusty, ${Math.round(h.windKt)}G${Math.round(h.gustKt)} kt`, h.gustKt));
-      const xw = crosswind(h, ctx.rwys);
-      if (xw && xw.xw >= 15) o.push(R(xw.xw >= 20 ? 2 : 1, 'xw', `Crosswind ~${Math.round(xw.xw)} kt on best runway ${xw.id}`, xw.xw));
+      else if (h.gustKt >= 18 && h.gustKt - h.windKt >= 12) o.push(R(1, 'wind', `Gusty, ${Math.round(h.windKt)}G${Math.round(h.gustKt)} kt`, h.gustKt));
+      if (h.windKt >= 20 && h.gustKt < 25) o.push(R(1, 'wind', `Wind ${Math.round(h.windKt)} kt, check crosswind`, h.windKt));
       const aloft = h.levels.find(l => l.L === (ctx.cruiseL || 850));
       if (aloft) { if (aloft.ws >= 60) o.push(R(2, 'aloft', `Winds aloft ${Math.round(aloft.ws)} kt, turbulence`, aloft.ws)); else if (aloft.ws >= 40) o.push(R(1, 'aloft', `Winds aloft ${Math.round(aloft.ws)} kt, bumpy`, aloft.ws)); }
       if (ctx.cruiseL && aloft && aloft.cc >= 70 && aloft.aglFt > 500) o.push(R(1, 'cruise', 'Cloud at cruise altitude, plan lower', aloft.cc));
@@ -704,8 +679,7 @@ const MODES = {
       if (terminal) {
         if (h.gustKt >= 35) o.push(R(2, 'wind', `Gusts ${Math.round(h.gustKt)} kt`, h.gustKt));
         else if (h.gustKt >= 25) o.push(R(1, 'wind', `Gusts ${Math.round(h.gustKt)} kt`, h.gustKt));
-        const xw = crosswind(h, ctx.rwys);
-        if (xw && xw.xw >= 15) o.push(R(xw.xw >= 20 ? 2 : 1, 'xw', `Crosswind ~${Math.round(xw.xw)} kt on best runway ${xw.id}`, xw.xw));
+        else if (h.windKt >= 20) o.push(R(1, 'wind', `Wind ${Math.round(h.windKt)} kt, check crosswind`, h.windKt));
       }
       const aloft = h.levels.find(l => l.L === (ctx.cruiseL || 700));
       if (aloft && aloft.ws >= 60) o.push(R(1, 'aloft', `Winds aloft ${Math.round(aloft.ws)} kt`, aloft.ws));
@@ -777,7 +751,13 @@ function summariseDay(mode, loc, iso, sel, ctx) {
   // representative weather: most severe code in window
   const sevOf = c => c >= 95 ? 9 : WX.frz(c) ? 8 : WX.snow(c) ? 7 : WX.rain(c) ? (c >= 63 || c >= 81 ? 6 : 5) : WX.fog(c) ? 4 : c === 3 ? 3 : c === 2 ? 2 : 1;
   const codes = W.map(x => x.h.code).filter(c => c != null);
-  let code = null; if (codes.length) { const counts = {}; codes.forEach(c => counts[c] = (counts[c] || 0) + 1); code = codes.reduce((m, c) => { const s = sevOf(c) + (counts[c] >= 2 || c < 45 ? 0.5 : 0); return s > m.s ? {c, s} : m; }, {c: codes[0], s: -1}).c; }
+  let code = null;
+  if (codes.length) {
+    const counts = {}; codes.forEach(c => counts[c] = (counts[c] || 0) + 1);
+    const lasting = Object.keys(counts).map(Number).filter(c => c < 45 || counts[c] >= Math.max(2, codes.length * 0.2));
+    const pool = lasting.length ? lasting : Object.keys(counts).map(Number);
+    code = pool.reduce((m, c) => sevOf(c) > sevOf(m) || (sevOf(c) === sevOf(m) && counts[c] > counts[m]) ? c : m, pool[0]);
+  }
   const cats = W.map(x => x.h.cat);
   const worstCat = cats.reduce((m, c) => CAT_RANK[c] > CAT_RANK[m] ? c : m, 'VFR');
   return {iso, hours, W, lv, nPoor, nMarg, best, reasons: withTimes, hi: allT.length ? Math.max(...allT) : null, lo: allT.length ? Math.min(...allT) : null, code, worstCat, sun, win};
@@ -871,7 +851,7 @@ function attachAC(input, onPick) {
 attachAC($('#placeInput'), r => { addPlace(r); $('#placeInput').value = ''; });
 async function addPlace(p) {
   if (S.places.some(x => Math.abs(x.lat - p.lat) < 0.01 && Math.abs(x.lon - p.lon) < 0.01)) { toast('Already added'); return; }
-  S.places.push({name: p.name, sub: p.sub || '', lat: p.lat, lon: p.lon, icao: p.icao, rwys: p.rwys});
+  S.places.push({name: p.name, sub: p.sub || '', lat: p.lat, lon: p.lon});
   renderChips(); saveState(); run();
 }
 $('#placesForm').addEventListener('submit', async e => {
@@ -956,10 +936,9 @@ async function runPlaces(my) {
     catch (e) { if (my !== runSeq) return; setStatus(`<div class="err">Couldn't load forecasts (${esc(e.message)}). Wait a minute and press Check weather again.</div>`); return; }
   }
   if (my !== runSeq) return;
-  // fill missing airport runways for aviation crosswind
   const summaries = S.places.map((p, i) => {
     const loc = data ? data[i] : null;
-    const ctx = {rwys: p.rwys};
+    const ctx = {};
     return {p, loc, days: dates.map(iso => (loc ? summariseDay(mode, loc, iso, S.hours, ctx) : null) || {iso, lv: null, na: true})};
   });
   const out = [];
@@ -968,8 +947,6 @@ async function runPlaces(my) {
   out.push(legendHTML());
   $('#results').innerHTML = out.join('');
   wireCards(summaries);
-  // aviation reports for airports
-  if (avi) summaries.forEach((s, i) => { if (s.p.icao) aviationReports(s.p.icao).then(r => { if (my === runSeq) showReports(i, r); }); });
 }
 function matrixHTML(summaries) {
   const dates = summaries[0].days.map(d => d.iso);
@@ -984,7 +961,7 @@ function keyDays(s) {
   const parts = [];
   if (good.length) parts.push(`<span>Best: <b>${good.map(lbl).join(', ')}</b></span>`);
   else { const least = [...ok].sort((a, b) => a.lv - b.lv || (a.nPoor + a.nMarg) - (b.nPoor + b.nMarg))[0]; parts.push(`<span>No clear good day. Least bad: <b>${lbl(least)}</b></span>`); }
-  if (poor.length) parts.push(`<span>Avoid: <b>${poor.slice(0, 4).map(d => `${lbl(d)}${d.reasons[0] ? ` (${esc(d.reasons[0].t.toLowerCase())})` : ''}`).join(', ')}</b></span>`);
+  if (poor.length) parts.push(`<span>Avoid: <b>${poor.slice(0, 4).map(d => `${lbl(d)}${d.reasons[0] && d.reasons[0].lv ? ` (${esc(d.reasons[0].t)})` : ''}`).join(', ')}</b></span>`);
   return `<div class="keydays">${parts.join('')}</div>`;
 }
 function locHTML(s, li) {
@@ -994,7 +971,6 @@ function locHTML(s, li) {
   return `<section class="loc" data-loc="${li}">
     <div class="loc-head"><h2>${esc(p.name)}</h2><span class="sub">${esc(sub)}</span></div>
     ${keyDays(s)}
-    <div class="reports" data-reports="${li}"></div>
     <div class="cards">${s.days.map((d, di) => cardHTML(d, li, di)).join('')}</div>
   </section>`;
 }
@@ -1056,12 +1032,6 @@ function wireCards(summaries) {
     after.after(det);
     det.scrollIntoView({block: 'nearest', behavior: 'smooth'});
   }));
-}
-function showReports(i, r) {
-  const el = $(`[data-reports="${i}"]`); if (!el || (!r.metar && !r.taf)) return;
-  const m = r.metar;
-  const cat = m && (m.fltCat || m.flightCategory);
-  el.innerHTML = `<details class="more"><summary>${cat ? `<span class="cat-chip cat-${esc(cat)}">${esc(cat)}</span> ` : ''}Latest METAR${r.taf ? ' and TAF' : ''}</summary><div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">${m ? `<pre class="raw">${esc(m.rawOb)}</pre>` : ''}${r.taf ? `<pre class="raw">${esc(r.taf.rawTAF)}</pre>` : ''}</div></details>`;
 }
 function legendHTML() {
   const avi = MODES[S.mode].aviation;
@@ -1171,7 +1141,7 @@ function timeline(samples, fcs, stops, dep, avi, path) {
     const isStop = s.stop != null, mid = isStop && s.stop > 0 && s.stop < stops.length - 1;
     const h = recAt(fcs[j], arrive);
     const terminal = isStop;
-    const ctx = {terminal, cruiseL: avi && !terminal ? cruiseL : null, rwys: isStop ? stops[s.stop].rwys : null};
+    const ctx = {terminal, cruiseL: avi && !terminal ? cruiseL : null};
     const e = h ? evalHour(S.mode, h, ctx) : null;
     out.push({s, t: arrive, h, ...(e || {lv: null, rs: []})});
     if (mid) t += (r.dwell || 0) * 60;
