@@ -198,8 +198,8 @@ table.matrix td.m0{background:var(--good-bg);color:var(--good)} table.matrix td.
 .daybtn small{color:var(--muted);font-size:.75rem;line-height:1.25}
 #map{height:280px;border-radius:var(--r);border:1px solid var(--line-2);overflow:hidden;background:var(--surface-2);z-index:0}
 .timeline{display:flex;flex-direction:column;gap:0;position:relative}
-.tp{display:grid;grid-template-columns:62px 18px 1fr;gap:0 10px;min-width:0}
-.tp .when{text-align:right;padding-top:12px;font-weight:600;font-size:.9rem;line-height:1.2}
+.tp{display:grid;grid-template-columns:70px 18px 1fr;gap:0 10px;min-width:0}
+.tp .when{text-align:right;padding-top:12px;font-weight:600;font-size:.86rem;line-height:1.2;white-space:nowrap}
 .tp .when small{display:block;color:var(--muted);font-weight:400;font-size:.74rem}
 .tp .rail{position:relative;display:flex;justify-content:center}
 .tp .rail::before{content:"";position:absolute;top:0;bottom:0;width:2px;background:var(--line-2)}
@@ -222,12 +222,14 @@ footer{color:var(--muted);font-size:.8rem;line-height:1.5;border-top:1px solid v
 footer p{margin:0;max-width:75ch}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:999px;font-size:.85rem;font-weight:600;z-index:100}
 .leaflet-container{font:inherit;background:var(--surface-2)}
+.dark-tiles .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6)}
 .leaflet-popup-content{font-size:.85rem}
 @media (max-width:560px){
   .panel{padding:14px}
   .w-date{max-width:none}
   .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .tp{grid-template-columns:52px 16px 1fr;gap:0 8px}
+  .tp{grid-template-columns:60px 16px 1fr;gap:0 6px}
+  .tp .when{font-size:.8rem}
   .verdict{grid-template-columns:1fr}
   .verdict .big{grid-row:auto;width:auto;height:auto;padding:8px 12px;justify-self:start;border-radius:999px}
   .verdict .reasons{grid-column:1}
@@ -429,11 +431,11 @@ async function geocodeSearch(q, count = 6) {
   }));
 }
 async function reverseName(lat, lon) {
-  const key = `rev:${lat.toFixed(2)},${lon.toFixed(2)}`;
+  const key = `rev2:${lat.toFixed(2)},${lon.toFixed(2)}`;
   const c = store.get(key); if (c) return c;
   try {
     const d = await getJSON(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&localityLanguage=en`, {timeout: 8000});
-    const place = d.city || d.locality || '';
+    const place = (d.city || d.locality || '').replace(/^(Town|City|Village|Borough|Township) of /i, '');
     const sub = d.principalSubdivisionCode ? d.principalSubdivisionCode.replace(/^US-/, '') : (d.principalSubdivision || d.countryName || '');
     const out = place ? `${place}${sub ? ', ' + sub : ''}` : (d.principalSubdivision || '');
     if (out) store.set(key, out);
@@ -620,7 +622,7 @@ const MODES = {
       else if (h.tF != null && h.tF <= 34 && h.precipIn > 0.005 && !WX.frz(h.code)) o.push(R(1, 'ice', 'Near freezing, icy patches', 34 - h.tF));
       if (WX.thunder(h.code)) o.push(R(h.precipIn >= 0.25 ? 2 : 1, 'storm', 'Thunderstorms, heavy rain', 10));
       else if (h.precipIn >= 0.3) o.push(R(2, 'rain', 'Heavy rain', h.precipIn)); else if (h.precipIn >= 0.1) o.push(R(1, 'rain', 'Steady rain', h.precipIn));
-      if (h.visSm < 0.25) o.push(R(2, 'fog', 'Dense fog', -h.visSm)); else if (h.visSm < 1) o.push(R(1, 'fog', `Fog, ${visTxt(h.visSm).replace(' sm', ' mi')} visibility`, -h.visSm));
+      if (h.visSm < 0.25) o.push(R(2, 'fog', 'Dense fog', -h.visSm)); else if (h.visSm < 0.6) o.push(R(1, 'fog', `Fog, ${visTxt(h.visSm).replace(' sm', ' mi')} visibility`, -h.visSm));
       if (h.gustMph >= 50) o.push(R(2, 'wind', `Gusts ${Math.round(h.gustMph)} mph`, h.gustMph)); else if (h.gustMph >= 35) o.push(R(1, 'wind', `Gusts ${Math.round(h.gustMph)} mph, high-profile vehicles`, h.gustMph));
       return o;
     },
@@ -1033,9 +1035,9 @@ function wireCards(summaries) {
     det.scrollIntoView({block: 'nearest', behavior: 'smooth'});
   }));
 }
-function legendHTML() {
+function legendHTML(route) {
   const avi = MODES[S.mode].aviation;
-  return `<div class="legend"><span><i style="background:var(--good)"></i>${word(S.mode, 0)}</span><span><i style="background:var(--warn)"></i>${word(S.mode, 1)}</span><span><i style="background:var(--bad)"></i>${word(S.mode, 2)}</span>${avi ? '<span style="margin-left:8px">Flight category:</span><span><i style="background:var(--vfr)"></i>VFR</span><span><i style="background:var(--mvfr)"></i>MVFR</span><span><i style="background:var(--ifr)"></i>IFR</span><span><i style="background:var(--lifr)"></i>LIFR</span>' : ''}<span>Bars show each hour in the window. Tap a day for hourly detail.</span></div>`;
+  return `<div class="legend"><span><i style="background:var(--good)"></i>${word(S.mode, 0)}</span><span><i style="background:var(--warn)"></i>${word(S.mode, 1)}</span><span><i style="background:var(--bad)"></i>${word(S.mode, 2)}</span>${avi ? '<span style="margin-left:8px">Flight category:</span><span><i style="background:var(--vfr)"></i>VFR</span><span><i style="background:var(--mvfr)"></i>MVFR</span><span><i style="background:var(--ifr)"></i>IFR</span><span><i style="background:var(--lifr)"></i>LIFR</span>' : ''}<span>${route ? 'Dots show the risk at each point when you pass it.' : 'Bars show each hour in the window. Tap a day for hourly detail.'}</span></div>`;
 }
 
 /* ============================================================
@@ -1045,8 +1047,8 @@ let mapObj = null, tileLayer = null;
 function setTiles() {
   if (!mapObj) return;
   const dark = (document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'day' : 'night')) === 'night';
-  tileLayer?.remove();
-  tileLayer = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? 'dark_all' : 'light_all'}/{z}/{x}/{y}{r}.png`, {subdomains: 'abcd', maxZoom: 18, attribution: '&copy; OpenStreetMap contributors &copy; CARTO'}).addTo(mapObj);
+  if (!tileLayer) tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'}).addTo(mapObj);
+  mapObj.getContainer().classList.toggle('dark-tiles', dark);
 }
 
 async function resolveStops() {
@@ -1195,7 +1197,7 @@ async function runRoute(my) {
     reverseName(s.lat, s.lon).then(n => { if (my !== runSeq || !n) return; routeCache.names[j] = n; const el = document.querySelector(`[data-ptname="${j}"]`); if (el) el.textContent = n; });
   });
 }
-function ptName(j) { const c = routeCache; const s = c.samples[j]; return c.names[j] || (s.stop != null ? c.stops[s.stop].name : `Mile ${fmtInt(s.d * (c.path.factor || 1))}`); }
+function ptName(j) { const c = routeCache; const s = c.samples[j]; return c.names[j] || (s.stop != null ? c.stops[s.stop].name : 'En route'); }
 function bestDeparture(plan) {
   const c = routeCache; let best = null;
   for (let dh = -3; dh <= 6; dh++) {
@@ -1253,7 +1255,7 @@ function drawRoute(my) {
   // timeline
   out.push(`<p class="section-title">Along the route</p><div class="timeline">${plan.tl.map((x, j) => pointHTML(x, j, plan)).join('')}</div>`);
   out.push(`<p class="hint">${esc(c.path.note || '')} Times are local to each point. Each point uses the forecast hour closest to when you pass it.</p>`);
-  out.push(legendHTML());
+  out.push(legendHTML(true));
   $('#results').innerHTML = out.join('');
   $('#results').querySelectorAll('[data-plan]').forEach(b => b.onclick = () => { c.sel = +b.dataset.plan; drawRoute(my); });
   drawMap(plan);
@@ -1283,7 +1285,7 @@ function pointHTML(x, j, plan) {
 }
 function drawMap(plan) {
   const el = $('#map'); if (!el || typeof L === 'undefined') { el?.remove(); return; }
-  if (mapObj) { mapObj.remove(); mapObj = null; }
+  if (mapObj) { mapObj.remove(); mapObj = null; tileLayer = null; }
   mapObj = L.map(el, {scrollWheelZoom: false, attributionControl: true});
   setTiles();
   const c = routeCache;
