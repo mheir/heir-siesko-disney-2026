@@ -224,6 +224,7 @@ footer{color:var(--muted);font-size:.8rem;line-height:1.5;border-top:1px solid v
 footer p{margin:0;max-width:75ch}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:999px;font-size:.85rem;font-weight:600;z-index:100}
 .leaflet-container{font:inherit;background:var(--surface-2)}
+.dark-tiles .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6)}
 .leaflet-popup-content{font-size:.85rem}
 @media (max-width:560px){
   .panel{padding:14px}
@@ -308,7 +309,7 @@ footer p{margin:0;max-width:75ch}
 
   <footer>
     <p><b>Planning guidance only.</b> These cards are distilled from computer model forecasts and simple rules of thumb. They are not an official weather briefing. Before a flight, get a full briefing from an approved source such as 1800wxbrief.com or ForeFlight, and check NOTAMs and TFRs.</p>
-    <p>Ceilings and flight categories are estimated from model cloud layers and humidity, not observed. Airport codes work as places, but check the airport's own METAR and TAF too. Weather data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0), road routes from OSRM, place names from BigDataCloud, map tiles from CARTO with OpenStreetMap data.</p>
+    <p>Ceilings and flight categories are estimated from model cloud layers and humidity, not observed. Airport codes work as places, but check the airport's own METAR and TAF too. Weather data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0), road routes from OSRM, place names from BigDataCloud, map tiles from OpenStreetMap.</p>
   </footer>
 </div>
 
@@ -1051,16 +1052,13 @@ let mapObj = null, tileLayer = null;
 function setTiles() {
   if (!mapObj) return;
   const dark = (document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'day' : 'night')) === 'night';
-  const style = dark ? 'dark_all' : 'light_all';
-  if (tileLayer && tileLayer.wxStyle === style) return;
-  if (tileLayer) mapObj.removeLayer(tileLayer);
-  tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/' + style + '/{z}/{x}/{y}{r}.png', {
-    subdomains: 'abcd', maxZoom: 19,
-    referrerPolicy: 'strict-origin-when-cross-origin',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>'
-  });
-  tileLayer.wxStyle = style;
-  tileLayer.addTo(mapObj);
+  if (!tileLayer) {
+    tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, referrerPolicy: 'strict-origin-when-cross-origin',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
+    }).addTo(mapObj);
+  }
+  mapObj.getContainer().classList.toggle('dark-tiles', dark);
 }
 
 async function resolveStops() {
