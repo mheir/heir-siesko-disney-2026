@@ -576,7 +576,9 @@ function levelFor(altFt) { let best = 850, bd = Infinity; for (const L of LEVELS
 const R = (lv, k, t, v = 0) => ({lv, k, t, v});
 function rainRule(h, out) {
   const pop = h.pop ?? 0, pr = h.precipIn;
-  if ((pop >= 60 && pr >= 0.02) || pr >= 0.1) out.push(R(2, 'rain', pop ? `Rain likely (${pop}%)` : 'Rain', pop + pr * 100));
+  if (pop >= 60 && pr >= 0.02) out.push(R(2, 'rain', `Rain likely (${pop}%)`, pop + pr * 100));
+  // The model can put a wet hour in the forecast while its own chance stays low; say so plainly.
+  else if (pr >= 0.1) out.push(R(pop >= 30 ? 2 : 1, 'rain', `Showers possible (${pop}%)`, pop + pr * 100));
   else if (pop >= 30 || pr >= 0.01) out.push(R(1, 'rain', `Chance of rain (${pop}%)`, pop + pr * 100));
 }
 const MODES = {
