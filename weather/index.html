@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0A0F1E">
+<title>Weather Outlook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* Layout: one column of controls, then results as rows of day cards (places) or a timed route timeline. */
+:root{
+  --bg:#0A0F1E; --bg-2:#0E1528; --surface:#131B30; --surface-2:#1A243D; --line:rgba(232,198,106,.16); --line-2:rgba(160,180,215,.14);
+  --ink:#EEF1F7; --muted:#9AA7BF; --faint:#6E7B95; --accent:#E8C66A; --accent-ink:#1A1405;
+  --good:#3FBF7F; --warn:#E9A93A; --bad:#EF5B52; --na:#4A5570;
+  --good-bg:rgba(63,191,127,.14); --warn-bg:rgba(233,169,58,.15); --bad-bg:rgba(239,91,82,.15); --na-bg:rgba(110,123,149,.14);
+  --vfr:#34C66F; --mvfr:#4C8DF6; --ifr:#EF4E4E; --lifr:#D44DE8;
+  --shadow:0 10px 30px rgba(0,0,0,.35);
+  --f-display:"Space Grotesk",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-body:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --r:14px; --r-sm:9px;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="night"]){
+    --bg:#F3F5F9; --bg-2:#E9EEF6; --surface:#FFFFFF; --surface-2:#F1F4F9; --line:rgba(154,107,0,.22); --line-2:rgba(30,50,90,.12);
+    --ink:#14203A; --muted:#55627D; --faint:#7D89A1; --accent:#9A6B00; --accent-ink:#FFFFFF;
+    --good:#1E8E57; --warn:#B4740F; --bad:#C9362E; --na:#9AA4B8;
+    --good-bg:rgba(30,142,87,.11); --warn-bg:rgba(180,116,15,.12); --bad-bg:rgba(201,54,46,.10); --na-bg:rgba(125,137,161,.12);
+    --vfr:#1E9E52; --mvfr:#2F6FE0; --ifr:#D93030; --lifr:#B732C9;
+    --shadow:0 8px 24px rgba(20,32,58,.10);
+    color-scheme:light;
+  }
+}
+:root[data-theme="day"]{
+  --bg:#F3F5F9; --bg-2:#E9EEF6; --surface:#FFFFFF; --surface-2:#F1F4F9; --line:rgba(154,107,0,.22); --line-2:rgba(30,50,90,.12);
+  --ink:#14203A; --muted:#55627D; --faint:#7D89A1; --accent:#9A6B00; --accent-ink:#FFFFFF;
+  --good:#1E8E57; --warn:#B4740F; --bad:#C9362E; --na:#9AA4B8;
+  --good-bg:rgba(30,142,87,.11); --warn-bg:rgba(180,116,15,.12); --bad-bg:rgba(201,54,46,.10); --na-bg:rgba(125,137,161,.12);
+  --vfr:#1E9E52; --mvfr:#2F6FE0; --ifr:#D93030; --lifr:#B732C9;
+  --shadow:0 8px 24px rgba(20,32,58,.10);
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-body);font-variant-numeric:tabular-nums;
+  background-image:radial-gradient(1200px 500px at 50% -200px,var(--bg-2),transparent 70%);background-repeat:no-repeat;min-height:100vh}
+a{color:var(--accent)}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;padding-block:18px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:18px}
+
+/* header */
+header.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;margin-right:auto;min-width:0}
+.brand svg{flex:none}
+.brand h1{font:600 1.35rem/1.1 var(--f-display);margin:0;letter-spacing:-.01em}
+.brand p{margin:2px 0 0;color:var(--muted);font-size:.85rem}
+.back{font-size:.85rem;color:var(--muted);text-decoration:none}
+.back:hover{color:var(--accent)}
+.iconbtn{appearance:none;border:1px solid var(--line-2);background:var(--surface);border-radius:999px;padding:7px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:.85rem;font-weight:500}
+.iconbtn:hover{border-color:var(--accent)}
+
+/* panel */
+.panel{background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r);box-shadow:var(--shadow);padding:16px;display:flex;flex-direction:column;gap:14px}
+.modes{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:-2px;padding:2px}
+.modes::-webkit-scrollbar{display:none}
+.mode{appearance:none;flex:none;border:1px solid var(--line-2);background:var(--surface-2);border-radius:11px;padding:8px 12px;cursor:pointer;text-align:left;display:flex;align-items:center;gap:8px;min-width:0}
+.mode b{display:block;font-weight:600;font-size:.9rem;line-height:1.2}
+.mode small{display:block;color:var(--muted);font-size:.72rem;line-height:1.2}
+.mode svg{flex:none;color:var(--muted)}
+.mode[aria-pressed="true"]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface-2))}
+.mode[aria-pressed="true"] svg{color:var(--accent)}
+.tabs{display:inline-flex;background:var(--surface-2);border:1px solid var(--line-2);border-radius:999px;padding:3px;align-self:flex-start}
+.tab{appearance:none;border:0;background:transparent;border-radius:999px;padding:6px 16px;cursor:pointer;font-weight:600;font-size:.88rem;color:var(--muted)}
+.tab[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field>span{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.field input,.field select{background:var(--surface-2);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:9px 11px;min-width:0;width:100%;font-size:16px}
+.field input:focus,.field select:focus{border-color:var(--accent);outline:none}
+.grow{flex:1 1 220px}
+.w-date{flex:1 1 140px;max-width:180px}
+.w-sm{flex:0 1 150px}
+.w-xs{flex:0 1 96px}
+.btn{appearance:none;border:0;border-radius:999px;padding:10px 18px;font-weight:700;cursor:pointer;background:var(--accent);color:var(--accent-ink);white-space:nowrap}
+.btn:hover{filter:brightness(1.06)}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line-2);font-weight:600}
+.btn.ghost:hover{border-color:var(--accent)}
+.btn:disabled{opacity:.6;cursor:default}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--line-2);border-radius:999px;padding:5px 6px 5px 12px;font-size:.86rem;max-width:100%}
+.chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip button{appearance:none;border:0;background:transparent;cursor:pointer;color:var(--muted);width:22px;height:22px;border-radius:50%;display:grid;place-items:center;padding:0}
+.chip button:hover{background:var(--bg);color:var(--ink)}
+.hint{color:var(--muted);font-size:.8rem;margin:0}
+.ac{position:relative}
+.ac-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:50;background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r-sm);box-shadow:var(--shadow);overflow:hidden;max-height:280px;overflow-y:auto}
+.ac-item{display:block;width:100%;text-align:left;appearance:none;border:0;background:transparent;padding:9px 12px;cursor:pointer;font-size:.9rem}
+.ac-item small{color:var(--muted);display:block;font-size:.76rem}
+.ac-item:hover,.ac-item.on{background:var(--surface-2)}
+.stops{display:flex;flex-direction:column;gap:8px}
+.stop{display:flex;gap:8px;align-items:center}
+.stop .dot{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:.72rem;font-weight:700;background:var(--surface-2);border:1px solid var(--line-2);color:var(--muted)}
+.stop .ac{flex:1;min-width:0}
+.stop input{width:100%;background:var(--surface-2);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:9px 11px;font-size:16px}
+.stop input:focus{border-color:var(--accent);outline:none}
+.stop .rm{appearance:none;border:0;background:transparent;color:var(--muted);cursor:pointer;width:30px;height:30px;border-radius:50%;flex:none}
+.stop .rm:hover{background:var(--surface-2);color:var(--ink)}
+details.more summary{cursor:pointer;color:var(--muted);font-size:.85rem}
+
+/* results */
+#results{display:flex;flex-direction:column;gap:22px}
+.status{color:var(--muted);font-size:.9rem;display:flex;align-items:center;gap:8px}
+.spin{width:14px;height:14px;border:2px solid var(--line-2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.err{background:var(--bad-bg);border:1px solid color-mix(in srgb,var(--bad) 40%,transparent);border-radius:var(--r-sm);padding:10px 12px;font-size:.9rem}
+.loc{display:flex;flex-direction:column;gap:10px}
+.loc-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.loc-head h2{font:600 1.15rem/1.2 var(--f-display);margin:0}
+.loc-head .sub{color:var(--muted);font-size:.85rem}
+.keydays{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.88rem;color:var(--muted)}
+.keydays b{color:var(--ink);font-weight:600}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:10px}
+.card{position:relative;background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r);padding:12px 12px 10px;display:flex;flex-direction:column;gap:7px;cursor:pointer;text-align:left;appearance:none;color:inherit;min-width:0;transition:border-color .15s}
+.card:hover{border-color:color-mix(in srgb,var(--accent) 60%,var(--line-2))}
+.card[aria-expanded="true"]{border-color:var(--accent)}
+.card.v0{box-shadow:inset 0 3px 0 var(--good)}
+.card.v1{box-shadow:inset 0 3px 0 var(--warn)}
+.card.v2{box-shadow:inset 0 3px 0 var(--bad)}
+.card.vna{box-shadow:inset 0 3px 0 var(--na);cursor:default;opacity:.8}
+.c-top{display:flex;justify-content:space-between;align-items:flex-start;gap:6px}
+.c-date b{display:block;font:600 1rem/1.15 var(--f-display)}
+.c-date small{color:var(--muted);font-size:.78rem}
+.c-wx{display:flex;align-items:center;gap:8px}
+.c-wx svg{color:var(--muted);flex:none}
+.c-temp{font-size:.92rem}
+.c-temp b{font-weight:600}
+.c-temp span{color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:2px 9px;font-size:.74rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.p0{background:var(--good-bg);color:var(--good)}
+.p1{background:var(--warn-bg);color:var(--warn)}
+.p2{background:var(--bad-bg);color:var(--bad)}
+.pna{background:var(--na-bg);color:var(--muted)}
+.reasons{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px;font-size:.84rem;line-height:1.35}
+.reasons li{position:relative;padding-left:13px}
+.reasons li::before{content:"";position:absolute;left:0;top:.5em;width:6px;height:6px;border-radius:50%;background:var(--muted)}
+.reasons li.l2::before{background:var(--bad)}
+.reasons li.l1::before{background:var(--warn)}
+.reasons li.l0::before{background:var(--good)}
+.reasons li.note{color:var(--muted)}
+.best{font-size:.8rem;color:var(--muted)}
+.best b{color:var(--good);font-weight:600}
+.strip{display:flex;gap:2px;height:7px;margin-top:auto}
+.strip i{flex:1;border-radius:2px;background:var(--na)}
+.strip i.s0{background:var(--good)} .strip i.s1{background:var(--warn)} .strip i.s2{background:var(--bad)}
+.strip.cat i.VFR{background:var(--vfr)} .strip.cat i.MVFR{background:var(--mvfr)} .strip.cat i.IFR{background:var(--ifr)} .strip.cat i.LIFR{background:var(--lifr)}
+.strip.cat{height:4px;margin-top:0}
+.cat-chip{font:600 .72rem/1 var(--f-mono);padding:3px 6px;border-radius:5px;color:#fff;letter-spacing:.02em}
+.cat-VFR{background:var(--vfr)} .cat-MVFR{background:var(--mvfr)} .cat-IFR{background:var(--ifr)} .cat-LIFR{background:var(--lifr)}
+.detail{grid-column:1/-1;background:var(--surface);border:1px solid var(--accent);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.detail h3{margin:0;font:600 1rem/1.2 var(--f-display)}
+.tbl-wrap{overflow-x:auto;margin:0 -4px}
+table.hours{border-collapse:collapse;width:100%;font-size:.84rem;white-space:nowrap}
+table.hours th{font-size:.7rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:left;padding:4px 8px;border-bottom:1px solid var(--line-2)}
+table.hours td{padding:5px 8px;border-bottom:1px solid var(--line-2)}
+table.hours tr.out td{color:var(--faint)}
+table.hours td.rk{width:6px;padding:0}
+table.hours td.rk i{display:block;width:4px;height:18px;border-radius:2px;background:var(--na)}
+table.hours td.rk i.s0{background:var(--good)} table.hours td.rk i.s1{background:var(--warn)} table.hours td.rk i.s2{background:var(--bad)}
+.raw{font:400 .78rem/1.45 var(--f-mono);background:var(--surface-2);border-radius:var(--r-sm);padding:8px 10px;white-space:pre-wrap;word-break:break-word;margin:0}
+.matrix-wrap{overflow-x:auto}
+table.matrix{border-collapse:separate;border-spacing:3px;font-size:.8rem}
+table.matrix th{font-weight:600;color:var(--muted);padding:2px 4px;text-align:center}
+table.matrix th.l{text-align:left;color:var(--ink);padding-right:10px;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+table.matrix td{width:34px;height:26px;border-radius:6px;text-align:center;font-weight:700;font-size:.7rem}
+table.matrix td.m0{background:var(--good-bg);color:var(--good)} table.matrix td.m1{background:var(--warn-bg);color:var(--warn)} table.matrix td.m2{background:var(--bad-bg);color:var(--bad)} table.matrix td.mna{background:var(--na-bg);color:var(--faint)}
+.section-title{font:600 .78rem/1 var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0}
+
+/* route */
+.verdict{background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r);padding:16px;display:grid;grid-template-columns:auto 1fr;gap:6px 16px;align-items:center;box-shadow:var(--shadow)}
+.verdict .big{grid-row:span 3;width:64px;height:64px;border-radius:16px;display:grid;place-items:center;font:700 .82rem/1 var(--f-display);letter-spacing:.04em;text-transform:uppercase;text-align:center}
+.verdict .big.p0{background:var(--good-bg);color:var(--good)} .verdict .big.p1{background:var(--warn-bg);color:var(--warn)} .verdict .big.p2{background:var(--bad-bg);color:var(--bad)}
+.verdict h2{margin:0;font:600 1.15rem/1.25 var(--f-display);text-wrap:balance}
+.verdict .meta{color:var(--muted);font-size:.86rem}
+.verdict .reasons{grid-column:2}
+.suggest{grid-column:1/-1;background:var(--surface-2);border-radius:var(--r-sm);padding:9px 12px;font-size:.88rem;margin-top:6px}
+.suggest b{color:var(--accent)}
+.daystrip{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+.daybtn{flex:none;appearance:none;background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:8px 12px;cursor:pointer;text-align:left;display:flex;flex-direction:column;gap:4px;min-width:118px}
+.daybtn[aria-pressed="true"]{border-color:var(--accent)}
+.daybtn b{font:600 .92rem/1.1 var(--f-display)}
+.daybtn .pill{align-self:flex-start}
+.daybtn small{color:var(--muted);font-size:.75rem;line-height:1.25}
+#map{height:280px;border-radius:var(--r);border:1px solid var(--line-2);overflow:hidden;background:var(--surface-2);z-index:0}
+.timeline{display:flex;flex-direction:column;gap:0;position:relative}
+.tp{display:grid;grid-template-columns:70px 18px 1fr;gap:0 10px;min-width:0}
+.tp .when{text-align:right;padding-top:12px;font-weight:600;font-size:.86rem;line-height:1.2;white-space:nowrap}
+.tp .when small{display:block;color:var(--muted);font-weight:400;font-size:.74rem}
+.tp .rail{position:relative;display:flex;justify-content:center}
+.tp .rail::before{content:"";position:absolute;top:0;bottom:0;width:2px;background:var(--line-2)}
+.tp:first-child .rail::before{top:18px}
+.tp:last-child .rail::before{bottom:calc(100% - 18px)}
+.tp .rail i{position:relative;margin-top:13px;width:14px;height:14px;border-radius:50%;border:3px solid var(--surface);background:var(--na);box-shadow:0 0 0 1px var(--line-2)}
+.tp.stopp .rail i{width:18px;height:18px;margin-top:11px}
+.tp .rail i.s0{background:var(--good)} .tp .rail i.s1{background:var(--warn)} .tp .rail i.s2{background:var(--bad)}
+.tp .body{background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:10px 12px;margin-block:5px;min-width:0;display:flex;flex-direction:column;gap:5px}
+.tp.stopp .body{border-color:color-mix(in srgb,var(--accent) 35%,var(--line-2))}
+.tp .head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.tp .head b{font-weight:600;line-height:1.25}
+.tp .head small{color:var(--muted);display:block;font-size:.76rem}
+.facts{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.8rem;color:var(--muted)}
+.facts b{color:var(--ink);font-weight:500}
+
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.78rem;color:var(--muted);align-items:center}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+footer{color:var(--muted);font-size:.8rem;line-height:1.5;border-top:1px solid var(--line-2);padding-top:14px;display:flex;flex-direction:column;gap:6px}
+footer p{margin:0;max-width:75ch}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:999px;font-size:.85rem;font-weight:600;z-index:100}
+.leaflet-container{font:inherit;background:var(--surface-2)}
+.dark-tiles .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6)}
+.leaflet-popup-content{font-size:.85rem}
+@media (max-width:560px){
+  .panel{padding:14px}
+  .w-date{max-width:none}
+  .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tp{grid-template-columns:60px 16px 1fr;gap:0 6px}
+  .tp .when{font-size:.8rem}
+  .verdict{grid-template-columns:1fr}
+  .verdict .big{grid-row:auto;width:auto;height:auto;padding:8px 12px;justify-self:start;border-radius:999px}
+  .verdict .reasons{grid-column:1}
+}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><rect x="1" y="1" width="32" height="32" rx="9" fill="none" stroke="var(--accent)" stroke-width="1.5"/><circle cx="13" cy="14" r="5" fill="none" stroke="var(--accent)" stroke-width="1.8"/><path d="M13 5.5v2M13 20.5v2M4.5 14h2M19.5 14h2M7 8l1.4 1.4M17.6 18.6L19 20M7 20l1.4-1.4" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round"/><path d="M15 25.5h11a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.4 1.6A3.3 3.3 0 0 0 15 25.5z" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      <div>
+        <h1>Weather Outlook</h1>
+        <p>Day-by-day risk for being outside, driving and flying</p>
+      </div>
+    </div>
+    <a class="back" href="../">Trip plan</a>
+    <button class="iconbtn" id="themeBtn" type="button" aria-label="Switch theme">Theme</button>
+    <button class="iconbtn" id="shareBtn" type="button">Copy link</button>
+  </header>
+
+  <section class="panel" aria-label="Plan">
+    <div class="modes" id="modes" role="group" aria-label="Activity"></div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tabPlaces" type="button" aria-selected="true">Places &amp; dates</button>
+      <button class="tab" role="tab" id="tabRoute" type="button" aria-selected="false">Route</button>
+    </div>
+
+    <form id="placesForm" autocomplete="off">
+      <div class="row">
+        <label class="field grow ac"><span>Add a place</span>
+          <input id="placeInput" placeholder="City, airport code (KSNA) or lat,lon" enterkeyhint="go">
+        </label>
+        <button class="btn ghost" type="submit">Add</button>
+      </div>
+      <div class="chips" id="placeChips" style="margin-top:10px"></div>
+      <div class="row" style="margin-top:12px">
+        <label class="field w-date"><span>From</span><input type="date" id="startDate"></label>
+        <label class="field w-date"><span>To</span><input type="date" id="endDate"></label>
+        <label class="field w-sm"><span>Hours</span>
+          <select id="hoursSel"></select>
+        </label>
+        <button class="btn" type="button" id="placesGo">Check weather</button>
+      </div>
+      <p class="hint" style="margin-top:10px">Forecasts reach about 16 days ahead. Days further out show when their forecast opens.</p>
+    </form>
+
+    <form id="routeForm" hidden autocomplete="off">
+      <div class="stops" id="stops"></div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn ghost" type="button" id="addStop">Add stop</button>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <label class="field w-date"><span>Depart</span><input type="date" id="depDate"></label>
+        <label class="field w-sm"><span>Time</span><input type="time" id="depTime" step="900"></label>
+        <label class="field w-sm"><span>Compare</span>
+          <select id="compareDays">
+            <option value="1">This day only</option>
+            <option value="3">3 days</option>
+            <option value="5">5 days</option>
+            <option value="7">7 days</option>
+          </select>
+        </label>
+      </div>
+      <div class="row" style="margin-top:12px" id="travelRow"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" type="button" id="routeGo">Check route</button>
+      </div>
+      <p class="hint" style="margin-top:10px">Departure time is local to the first stop. Points are spaced along the route and each is checked at the time you would pass it.</p>
+    </form>
+  </section>
+
+  <div id="results" aria-live="polite"></div>
+
+  <footer>
+    <p><b>Planning guidance only.</b> These cards are distilled from computer model forecasts and simple rules of thumb. They are not an official weather briefing. Before a flight, get a full briefing from an approved source such as 1800wxbrief.com or ForeFlight, and check NOTAMs and TFRs.</p>
+    <p>Ceilings and flight categories are estimated from model cloud layers and humidity, not observed. Airport codes work as places, but check the airport's own METAR and TAF too. Weather data: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0), road routes from OSRM, place names from BigDataCloud, map tiles from OpenStreetMap.</p>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+'use strict';
+/* ============================================================
+   Utilities
+   ============================================================ */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const round = (v, n = 0) => v == null || !isFinite(v) ? null : Math.round(v * 10 ** n) / 10 ** n;
+const fmtInt = v => v == null || !isFinite(v) ? '–' : Math.round(v).toLocaleString('en-US');
+const KMH_MPH = 0.621371, KMH_KT = 0.539957, M_FT = 3.28084, MM_IN = 0.0393701;
+const DAY = 86400;
+const pad = n => String(n).padStart(2, '0');
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+const addDays = (iso, n) => { const [y,m,d] = iso.split('-').map(Number); const t = new Date(Date.UTC(y, m-1, d + n)); return t.toISOString().slice(0, 10); };
+const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00Z') - Date.parse(a + 'T00:00Z')) / 864e5);
+const WD = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const isoParts = iso => { const [y,m,d] = iso.split('-').map(Number); return {y, m, d, wd: new Date(Date.UTC(y, m-1, d)).getUTCDay()}; };
+const dayLabel = iso => { const p = isoParts(iso); return {wd: WD[p.wd], md: `${MO[p.m-1]} ${p.d}`}; };
+/* local clock helpers: t = unix seconds, off = utc offset seconds */
+const localDate = (t, off) => new Date((t + off) * 1000).toISOString().slice(0, 10);
+const localHour = (t, off) => new Date((t + off) * 1000).getUTCHours();
+const localMin = (t, off) => new Date((t + off) * 1000).getUTCMinutes();
+function hourName(h, withAmpm = true) { const hh = ((h % 24) + 24) % 24; const s = hh % 12 === 0 ? 12 : hh % 12; return withAmpm ? `${s} ${hh < 12 ? 'am' : 'pm'}` : String(s); }
+function clock(t, off) { const h = localHour(t, off), m = localMin(t, off); const s = h % 12 === 0 ? 12 : h % 12; return `${s}:${pad(m)} ${h < 12 ? 'am' : 'pm'}`; }
+function hourRange(a, b) { // a,b local hours, inclusive start, exclusive end
+  if (b - a <= 1) return hourName(a);
+  const am = h => (h % 24) < 12;
+  return am(a) === am(b) ? `${hourName(a, false)}–${hourName(b)}` : `${hourName(a)}–${hourName(b)}`;
+}
+function toast(msg) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = msg; document.body.appendChild(d); setTimeout(() => d.remove(), 1800); }
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const b64e = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const b64d = s => decodeURIComponent(escape(atob(s.replace(/-/g,'+').replace(/_/g,'/'))));
+
+/* geodesy */
+const R_MI = 3958.8, RAD = Math.PI / 180;
+function hav(a, b) { const dLat = (b.lat-a.lat)*RAD, dLon = (b.lon-a.lon)*RAD; const x = Math.sin(dLat/2)**2 + Math.cos(a.lat*RAD)*Math.cos(b.lat*RAD)*Math.sin(dLon/2)**2; return 2 * R_MI * Math.asin(Math.min(1, Math.sqrt(x))); }
+function bearing(a, b) { const y = Math.sin((b.lon-a.lon)*RAD)*Math.cos(b.lat*RAD); const x = Math.cos(a.lat*RAD)*Math.sin(b.lat*RAD) - Math.sin(a.lat*RAD)*Math.cos(b.lat*RAD)*Math.cos((b.lon-a.lon)*RAD); return (Math.atan2(y, x) / RAD + 360) % 360; }
+function gcInterp(a, b, f) {
+  const d = hav(a, b) / R_MI; if (d < 1e-9) return {lat: a.lat, lon: a.lon};
+  const A = Math.sin((1-f)*d)/Math.sin(d), B = Math.sin(f*d)/Math.sin(d);
+  const x = A*Math.cos(a.lat*RAD)*Math.cos(a.lon*RAD) + B*Math.cos(b.lat*RAD)*Math.cos(b.lon*RAD);
+  const y = A*Math.cos(a.lat*RAD)*Math.sin(a.lon*RAD) + B*Math.cos(b.lat*RAD)*Math.sin(b.lon*RAD);
+  const z = A*Math.sin(a.lat*RAD) + B*Math.sin(b.lat*RAD);
+  return {lat: Math.atan2(z, Math.hypot(x, y)) / RAD, lon: Math.atan2(y, x) / RAD};
+}
+
+/* sunrise / sunset (NOAA sunrise equation), returns unix seconds or null */
+function sunTimes(lat, lon, iso) {
+  const {y, m, d} = isoParts(iso);
+  const n = Math.round(Date.UTC(y, m-1, d, 12) / 864e5 + 2440587.5 - 2451545.0);
+  const Js = n - lon / 360;
+  const M = (357.5291 + 0.98560028 * Js) % 360;
+  const C = 1.9148*Math.sin(M*RAD) + 0.02*Math.sin(2*M*RAD) + 0.0003*Math.sin(3*M*RAD);
+  const L = (M + C + 180 + 102.9372) % 360;
+  const Jt = 2451545.0 + Js + 0.0053*Math.sin(M*RAD) - 0.0069*Math.sin(2*L*RAD);
+  const sd = Math.sin(L*RAD) * Math.sin(23.4397*RAD), cd = Math.cos(Math.asin(sd));
+  const cw = (Math.sin(-0.833*RAD) - Math.sin(lat*RAD)*sd) / (Math.cos(lat*RAD)*cd);
+  if (cw > 1) return {rise: null, set: null, polar: 'night'};
+  if (cw < -1) return {rise: null, set: null, polar: 'day'};
+  const w = Math.acos(cw) / RAD;
+  const toUnix = J => (J - 2440587.5) * DAY;
+  return {rise: toUnix(Jt - w/360), set: toUnix(Jt + w/360)};
+}
+
+/* ============================================================
+   Data access (all keyless, browser-friendly)
+   ============================================================ */
+async function getJSON(url, {cache = 0, timeout = 20000} = {}) {
+  const key = 'wx:' + url;
+  if (cache) { try { const c = JSON.parse(sessionStorage.getItem(key)); if (c && Date.now() - c.t < cache) return c.d; } catch {} }
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), timeout);
+  let r;
+  try { r = await fetch(url, {signal: ctl.signal}); } finally { clearTimeout(tm); }
+  let data = null; try { data = await r.json(); } catch {}
+  if (!r.ok || (data && data.error)) { const e = new Error((data && data.reason) || `HTTP ${r.status}`); e.status = r.status; e.data = data; throw e; }
+  if (cache) { try { sessionStorage.setItem(key, JSON.stringify({t: Date.now(), d: data})); } catch {} }
+  return data;
+}
+
+const LEVELS = [1000, 925, 850, 700, 600, 500];
+const LEVEL_FT = {1000: 360, 925: 2500, 850: 4800, 700: 9900, 600: 13800, 500: 18300};
+const HOURLY_BASE = ['temperature_2m','apparent_temperature','dew_point_2m','precipitation_probability','precipitation','snowfall','weather_code','cloud_cover','cloud_cover_low','visibility','wind_speed_10m','wind_gusts_10m','wind_direction_10m','uv_index','cape'];
+const HOURLY_AVI = ['surface_pressure','freezing_level_height', ...LEVELS.flatMap(L => [`temperature_${L}hPa`,`cloud_cover_${L}hPa`,`geopotential_height_${L}hPa`,`wind_speed_${L}hPa`,`wind_direction_${L}hPa`])];
+const FORECAST_HOSTS = ['https://api.open-meteo.com/v1/forecast', 'https://previous-runs-api.open-meteo.com/v1/forecast'];
+
+/* points: [{lat, lon}], dates: local start/end ISO (clipped by caller) */
+async function fetchForecast(points, {aviation, start, end}) {
+  const p = new URLSearchParams({
+    latitude: points.map(x => x.lat.toFixed(4)).join(','),
+    longitude: points.map(x => x.lon.toFixed(4)).join(','),
+    hourly: (aviation ? HOURLY_BASE.concat(HOURLY_AVI) : HOURLY_BASE).join(','),
+    timezone: 'auto', timeformat: 'unixtime', wind_speed_unit: 'kmh',
+    start_date: start, end_date: end,
+  });
+  let lastErr;
+  for (const host of FORECAST_HOSTS) {
+    try {
+      const d = await getJSON(`${host}?${p}`, {cache: 20 * 60e3, timeout: 60000});
+      return Array.isArray(d) ? d : [d];
+    } catch (e) { lastErr = e; if (e.status === 400) break; }
+  }
+  if (lastErr && lastErr.name === 'AbortError') lastErr = new Error('the forecast service took too long to answer');
+  throw lastErr;
+}
+
+async function geocodeSearch(q, count = 6) {
+  const d = await getJSON(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=${count}&language=en&format=json`, {cache: 864e5});
+  return (d.results || []).map(r => ({
+    name: r.name, lat: r.latitude, lon: r.longitude,
+    sub: [r.admin1, r.country_code === 'US' ? '' : r.country].filter(Boolean).join(', '),
+    elev: r.elevation,
+  }));
+}
+async function reverseName(lat, lon) {
+  const key = `rev2:${lat.toFixed(2)},${lon.toFixed(2)}`;
+  const c = store.get(key); if (c) return c;
+  try {
+    const d = await getJSON(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&localityLanguage=en`, {timeout: 8000});
+    const place = (d.city || d.locality || '').replace(/^(Town|City|Village|Borough|Township) of /i, '');
+    const sub = d.principalSubdivisionCode ? d.principalSubdivisionCode.replace(/^US-/, '') : (d.principalSubdivision || d.countryName || '');
+    const out = place ? `${place}${sub ? ', ' + sub : ''}` : (d.principalSubdivision || '');
+    if (out) store.set(key, out);
+    return out;
+  } catch { return ''; }
+}
+const COORD_RE = /^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/;
+const CODE_RE = /^\s*([A-Za-z][A-Za-z0-9]{2,3})\s*$/;
+/* resolve free text into a location */
+async function resolvePlace(q) {
+  q = q.trim(); if (!q) return null;
+  const c = q.match(COORD_RE);
+  if (c) { const lat = +c[1], lon = +c[2]; if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) { const nm = await reverseName(lat, lon); return {name: nm || `${lat.toFixed(3)}, ${lon.toFixed(3)}`, sub: nm ? `${lat.toFixed(3)}, ${lon.toFixed(3)}` : '', lat, lon}; } }
+  const k = q.match(CODE_RE);
+  if (k && (q === q.toUpperCase() || q.length === 4)) {
+    // airport identifiers: the place index knows most ICAO codes; try K-prefixed for 3-letter US codes
+    const code = k[1].toUpperCase();
+    for (const t of code.length === 3 ? ['K' + code, code] : [code]) {
+      const r = await geocodeSearch(t, 1);
+      if (r[0]) return {...r[0], sub: [code, r[0].sub].filter(Boolean).join(' · ')};
+    }
+  }
+  const r = await geocodeSearch(q, 1);
+  return r[0] || null;
+}
+
+/* ============================================================
+   Forecast normalisation
+   ============================================================ */
+const WX = {
+  thunder: c => c >= 95, frz: c => [56,57,66,67].includes(c), snow: c => (c >= 71 && c <= 77) || c === 85 || c === 86,
+  rain: c => (c >= 51 && c <= 67) || (c >= 80 && c <= 82), fog: c => c === 45 || c === 48,
+};
+function wxText(c) {
+  if (c == null) return '';
+  if (c >= 95) return c > 95 ? 'Thunderstorms, hail' : 'Thunderstorms';
+  if (WX.frz(c)) return 'Freezing rain';
+  if (c >= 85) return 'Snow showers';
+  if (c >= 80) return c === 82 ? 'Heavy showers' : 'Showers';
+  if (c >= 71) return c === 75 ? 'Heavy snow' : 'Snow';
+  if (c >= 61) return c === 65 ? 'Heavy rain' : c === 61 ? 'Light rain' : 'Rain';
+  if (c >= 51) return 'Drizzle';
+  if (c >= 45) return 'Fog';
+  return ['Clear','Mostly clear','Partly cloudy','Overcast'][c] || '';
+}
+function wxIconKey(c, isDay = true) {
+  if (c == null) return 'cloud';
+  if (c >= 95) return 'storm';
+  if (WX.snow(c)) return 'snow';
+  if (WX.rain(c)) return 'rain';
+  if (WX.fog(c)) return 'fog';
+  if (c === 3) return 'cloud';
+  if (c === 2) return 'partly';
+  return isDay ? 'sun' : 'moon';
+}
+const ICONS = {
+  sun: '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/>',
+  moon: '<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>',
+  partly: '<path d="M8.5 4v1.4M3 9.5h1.4M4.6 5.6l1 1M12.4 5.6l-1 1"/><path d="M5.6 11.6A3.6 3.6 0 0 1 12 8.6"/><path d="M8 19.5h9.5a3.5 3.5 0 0 0 .2-7A5 5 0 0 0 8.3 14 2.8 2.8 0 0 0 8 19.5z"/>',
+  cloud: '<path d="M6.5 18.5h11a4 4 0 0 0 .3-8 5.6 5.6 0 0 0-10.7 1.6A3.2 3.2 0 0 0 6.5 18.5z"/>',
+  rain: '<path d="M6.5 14.5h11a4 4 0 0 0 .3-8 5.6 5.6 0 0 0-10.7 1.6A3.2 3.2 0 0 0 6.5 14.5z"/><path d="M8 17.5l-1 2.5M12 17.5l-1 2.5M16 17.5l-1 2.5"/>',
+  storm: '<path d="M6.5 14h11a4 4 0 0 0 .3-8 5.6 5.6 0 0 0-10.7 1.6A3.2 3.2 0 0 0 6.5 14z"/><path d="M12.5 14l-2.2 3.6h3l-2.1 3.9"/>',
+  snow: '<path d="M6.5 14h11a4 4 0 0 0 .3-8 5.6 5.6 0 0 0-10.7 1.6A3.2 3.2 0 0 0 6.5 14z"/><path d="M8 17.5v.1M12 19.5v.1M16 17.5v.1M10 21v.1M14 21v.1" stroke-width="2.6"/>',
+  fog: '<path d="M6.5 12.5h11a4 4 0 0 0 .3-8 5.6 5.6 0 0 0-10.7 1.6A3.2 3.2 0 0 0 6.5 12.5z"/><path d="M4 16h16M6 19.5h12"/>',
+};
+const icon = (k, s = 26) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k] || ICONS.cloud}</svg>`;
+
+function catOf(ceil, vis) {
+  if (ceil < 500 || vis < 1) return 'LIFR';
+  if (ceil < 1000 || vis < 3) return 'IFR';
+  if (ceil <= 3000 || vis <= 5) return 'MVFR';
+  return 'VFR';
+}
+const CAT_RANK = {VFR: 0, MVFR: 1, IFR: 2, LIFR: 3};
+
+/* Build one hour's normalised record from an Open-Meteo location response. */
+function hourRec(loc, i) {
+  const H = loc.hourly, elevM = loc.elevation ?? 0;
+  const g = k => { const a = H[k]; return a ? a[i] : null; };
+  const tC = g('temperature_2m'), tdC = g('dew_point_2m');
+  const code = g('weather_code');
+  const h = {
+    t: H.time[i], off: loc.utc_offset_seconds || 0, code,
+    tC, tF: tC == null ? null : tC * 9/5 + 32,
+    feelsF: g('apparent_temperature') == null ? null : g('apparent_temperature') * 9/5 + 32,
+    pop: g('precipitation_probability'),
+    precipIn: (g('precipitation') ?? 0) * MM_IN,
+    snowIn: (g('snowfall') ?? 0) * 0.3937, // cm -> in
+    cloud: g('cloud_cover'), low: g('cloud_cover_low'),
+    windMph: (g('wind_speed_10m') ?? 0) * KMH_MPH, gustMph: (g('wind_gusts_10m') ?? 0) * KMH_MPH,
+    windKt: (g('wind_speed_10m') ?? 0) * KMH_KT, gustKt: (g('wind_gusts_10m') ?? 0) * KMH_KT,
+    dir: g('wind_direction_10m'), uv: g('uv_index'), cape: g('cape') ?? 0,
+  };
+  // visibility (statute miles); fall back to a weather-code estimate when the model gives none
+  const v = g('visibility');
+  h.visSm = v != null ? v / 1609.34 : WX.fog(code) ? 0.5 : (code === 65 || code === 75 || code === 82) ? 2 : 10;
+  // ceiling estimate, ft AGL
+  let ceil = Infinity;
+  if (h.low != null && h.low >= 60 && tC != null && tdC != null) ceil = Math.min(ceil, Math.max(100, (tC - tdC) * 410));
+  h.levels = [];
+  if (H['geopotential_height_850hPa']) {
+    for (const L of LEVELS) {
+      const z = g(`geopotential_height_${L}hPa`), cc = g(`cloud_cover_${L}hPa`), tl = g(`temperature_${L}hPa`);
+      if (z == null) continue;
+      const agl = (z - elevM) * M_FT;
+      h.levels.push({L, mslFt: z * M_FT, aglFt: agl, cc, tC: tl, ws: (g(`wind_speed_${L}hPa`) ?? 0) * KMH_KT, wd: g(`wind_direction_${L}hPa`)});
+      if (cc != null && cc >= 60 && agl > 50) ceil = Math.min(ceil, agl);
+    }
+  }
+  if (WX.fog(code)) ceil = Math.min(ceil, 300);
+  h.ceil = ceil;
+  h.cat = catOf(ceil, h.visSm);
+  const frz = g('freezing_level_height'); h.frzFt = frz == null ? null : frz * M_FT;
+  const p = g('surface_pressure');
+  if (p != null && tC != null) { const pa = (1 - Math.pow(p / 1013.25, 0.190284)) * 145366.45; h.da = pa + 118.8 * (tC - (15 - 1.98 * pa / 1000)); }
+  return h;
+}
+/* Icing: cloudy layers between 0 and -15 C below 18,000 ft */
+function icingBand(h, topFt = 18500) {
+  const lv = h.levels.filter(l => l.cc != null && l.cc >= 50 && l.tC != null && l.tC <= 0.5 && l.tC >= -15 && l.aglFt > 0 && l.mslFt < topFt);
+  if (!lv.length) return null;
+  const lo = Math.min(...lv.map(l => l.mslFt)), hi = Math.max(...lv.map(l => l.mslFt));
+  const dense = lv.some(l => l.cc >= 80);
+  return {lo, hi, dense};
+}
+const kft = ft => ft >= 1000 ? `${Math.round(ft / 1000)}k` : `${Math.round(ft / 100) * 100}`;
+const bandTxt = b => kft(b.lo) === kft(b.hi) ? `near ${kft(b.lo)} ft` : `${kft(b.lo)}–${kft(b.hi)} ft`;
+const ceilTxt = c => !isFinite(c) ? 'none' : `${fmtInt(Math.round(c / 100) * 100)} ft`;
+const visTxt = v => v >= 10 ? '10+ sm' : v >= 3 ? `${Math.round(v)} sm` : `${round(v, 1)} sm`;
+function levelFor(altFt) { let best = 850, bd = Infinity; for (const L of LEVELS) { const d = Math.abs(LEVEL_FT[L] - altFt); if (d < bd) { bd = d; best = L; } } return best; }
+/* ============================================================
+   Activity modes and their rules.
+   Each rule returns {lv: 1|2, k: key, t: text, v: severity} ; notes are lv 0.
+   ============================================================ */
+const R = (lv, k, t, v = 0) => ({lv, k, t, v});
+function rainRule(h, out) {
+  const pop = h.pop ?? 0, pr = h.precipIn;
+  if (pop >= 60 && pr >= 0.02) out.push(R(2, 'rain', `Rain likely (${pop}%)`, pop + pr * 100));
+  // The model can put a wet hour in the forecast while its own chance stays low; say so plainly.
+  else if (pr >= 0.1) out.push(R(pop >= 30 ? 2 : 1, 'rain', `Showers possible (${pop}%)`, pop + pr * 100));
+  else if (pop >= 30 || pr >= 0.01) out.push(R(1, 'rain', `Chance of rain (${pop}%)`, pop + pr * 100));
+}
+const MODES = {
+  outdoors: {
+    label: 'Outdoors', sub: 'Walks, parks, events', win: 'day', aviation: false,
+    icon: '<circle cx="12" cy="10" r="4"/><path d="M12 2v1.5M12 16.5V18M4 10h1.5M18.5 10H20M6.3 4.3l1.1 1.1M16.6 14.6l1.1 1.1M6.3 15.7l1.1-1.1M16.6 5.4l1.1-1.1M3 21.5h18"/>',
+    rules(h) {
+      const o = [];
+      if (WX.thunder(h.code)) o.push(R(2, 'storm', 'Thunderstorms', 10));
+      if (WX.frz(h.code)) o.push(R(2, 'ice', 'Freezing rain', 9));
+      if (h.snowIn >= 0.1) o.push(R(2, 'snow', 'Snow', h.snowIn)); else if (h.snowIn > 0) o.push(R(1, 'snow', 'Light snow', h.snowIn));
+      else rainRule(h, o);
+      const f = h.feelsF;
+      if (f != null) {
+        if (f >= 100) o.push(R(2, 'heat', `Feels like ${Math.round(f)}°`, f)); else if (f >= 90) o.push(R(1, 'heat', `Hot, feels ${Math.round(f)}°`, f));
+        if (f <= 20) o.push(R(2, 'cold', `Feels like ${Math.round(f)}°`, -f)); else if (f <= 40) o.push(R(1, 'cold', `Cold, feels ${Math.round(f)}°`, -f));
+      }
+      if (h.gustMph >= 40) o.push(R(2, 'wind', `Gusts ${Math.round(h.gustMph)} mph`, h.gustMph)); else if (h.gustMph >= 25) o.push(R(1, 'wind', `Gusts ${Math.round(h.gustMph)} mph`, h.gustMph));
+      if (h.visSm < 0.5) o.push(R(1, 'fog', 'Dense fog', -h.visSm));
+      if (h.uv >= 11) o.push(R(1, 'uv', `Extreme UV (${Math.round(h.uv)})`, h.uv)); else if (h.uv >= 8) o.push(R(0, 'uv', `Very high UV (${Math.round(h.uv)}), sunscreen`, h.uv));
+      return o;
+    },
+  },
+  beach: {
+    label: 'Beach & pool', sub: 'Sun, warmth, calm wind', win: '10-17', aviation: false,
+    icon: '<path d="M3 18.5c1.5 0 1.5-1 3-1s1.5 1 3 1 1.5-1 3-1 1.5 1 3 1 1.5-1 3-1 1.5 1 3 1"/><path d="M12 15V6"/><path d="M4.5 8.5A7.5 7.5 0 0 1 19.5 8.5z"/>',
+    rules(h) {
+      const o = [];
+      if (WX.thunder(h.code)) o.push(R(2, 'storm', 'Thunderstorms', 10));
+      rainRule(h, o);
+      const f = h.feelsF;
+      if (f != null) { if (f < 62) o.push(R(2, 'cool', `Too cool, ${Math.round(f)}°`, -f)); else if (f < 74) o.push(R(1, 'cool', `Cool, ${Math.round(f)}°`, -f)); if (f >= 103) o.push(R(1, 'heat', `Very hot, feels ${Math.round(f)}°`, f)); }
+      if (h.windMph >= 22 || h.gustMph >= 35) o.push(R(2, 'wind', `Windy, gusts ${Math.round(h.gustMph)} mph`, h.gustMph));
+      else if (h.windMph >= 14 || h.gustMph >= 25) o.push(R(1, 'wind', `Breezy, gusts ${Math.round(h.gustMph)} mph`, h.gustMph));
+      if (h.cloud != null && h.cloud >= 85) o.push(R(1, 'cloud', 'Mostly cloudy', h.cloud));
+      if (h.uv >= 8) o.push(R(0, 'uv', `UV ${Math.round(h.uv)}, reapply sunscreen`, h.uv));
+      return o;
+    },
+  },
+  driving: {
+    label: 'Driving', sub: 'Roads, rain, snow, fog', win: '6-21', aviation: false,
+    icon: '<path d="M5 16.5V12l2-5h10l2 5v4.5"/><path d="M3.5 12h17v4.5h-17z"/><circle cx="7.5" cy="14.3" r=".6"/><circle cx="16.5" cy="14.3" r=".6"/><path d="M5.5 16.5V19M18.5 16.5V19"/>',
+    rules(h) {
+      const o = [];
+      if (WX.frz(h.code)) o.push(R(2, 'ice', 'Freezing rain, icy roads', 10));
+      if (h.snowIn >= 0.2) o.push(R(2, 'snow', `Snow, ${round(h.snowIn, 1)} in/hr`, h.snowIn)); else if (h.snowIn > 0) o.push(R(1, 'snow', 'Light snow', h.snowIn));
+      else if (h.tF != null && h.tF <= 34 && h.precipIn > 0.005 && !WX.frz(h.code)) o.push(R(1, 'ice', 'Near freezing, icy patches', 34 - h.tF));
+      if (WX.thunder(h.code)) o.push(R(h.precipIn >= 0.25 ? 2 : 1, 'storm', 'Thunderstorms, heavy rain', 10));
+      else if (h.precipIn >= 0.3) o.push(R(2, 'rain', 'Heavy rain', h.precipIn)); else if (h.precipIn >= 0.1) o.push(R(1, 'rain', 'Steady rain', h.precipIn));
+      if (h.visSm < 0.25) o.push(R(2, 'fog', 'Dense fog', -h.visSm)); else if (h.visSm < 0.6) o.push(R(1, 'fog', `Fog, ${visTxt(h.visSm).replace(' sm', ' mi')} visibility`, -h.visSm));
+      if (h.gustMph >= 50) o.push(R(2, 'wind', `Gusts ${Math.round(h.gustMph)} mph`, h.gustMph)); else if (h.gustMph >= 35) o.push(R(1, 'wind', `Gusts ${Math.round(h.gustMph)} mph, high-profile vehicles`, h.gustMph));
+      return o;
+    },
+  },
+  vfr: {
+    label: 'Flying VFR', sub: 'Ceiling, visibility, wind', win: 'day', aviation: true,
+    icon: '<path d="M21 15.5l-8-4.5V5a1.5 1.5 0 0 0-3 0v6L2 15.5V17l8-2.5V19l-2.5 1.5V22l4-1 4 1v-1.5L13 19v-4.5l8 2.5z" transform="scale(.9) translate(1.3 0)"/>',
+    rules(h, ctx = {}) {
+      const o = [];
+      const lim = !isFinite(h.ceil) || h.ceil / 1000 > h.visSm / 3 ? 'vis' : 'ceil';
+      const what = lim === 'vis' && h.visSm < 5.01 ? `visibility ${visTxt(h.visSm)}` : `ceiling ${ceilTxt(h.ceil)}`;
+      const sev = 10000 - Math.min(isFinite(h.ceil) ? h.ceil : 9999, h.visSm * 600);
+      if (h.cat === 'LIFR' || h.cat === 'IFR') o.push(R(2, 'cat', `${h.cat}: ${what}`, sev));
+      else if (h.cat === 'MVFR') o.push(R(1, 'cat', `MVFR: ${what}`, sev));
+      if (WX.thunder(h.code)) o.push(R(2, 'storm', 'Thunderstorms', 10));
+      else if (h.cape >= 1500 && (h.pop ?? 0) >= 30) o.push(R(1, 'conv', 'Pop-up storms possible', h.cape));
+      if (WX.frz(h.code)) o.push(R(2, 'ice', 'Freezing precipitation', 10));
+      else if (WX.snow(h.code)) o.push(R(1, 'snow', 'Snow', h.snowIn));
+      if (h.gustKt >= 35) o.push(R(2, 'wind', `Gusts ${Math.round(h.gustKt)} kt`, h.gustKt));
+      else if (h.gustKt >= 25) o.push(R(1, 'wind', `Gusts ${Math.round(h.gustKt)} kt`, h.gustKt));
+      else if (h.gustKt >= 18 && h.gustKt - h.windKt >= 12) o.push(R(1, 'wind', `Gusty, ${Math.round(h.windKt)}G${Math.round(h.gustKt)} kt`, h.gustKt));
+      if (h.windKt >= 20 && h.gustKt < 25) o.push(R(1, 'wind', `Wind ${Math.round(h.windKt)} kt, check crosswind`, h.windKt));
+      const aloft = h.levels.find(l => l.L === (ctx.cruiseL || 850));
+      if (aloft) { if (aloft.ws >= 60) o.push(R(2, 'aloft', `Winds aloft ${Math.round(aloft.ws)} kt, turbulence`, aloft.ws)); else if (aloft.ws >= 40) o.push(R(1, 'aloft', `Winds aloft ${Math.round(aloft.ws)} kt, bumpy`, aloft.ws)); }
+      if (ctx.cruiseL && aloft && aloft.cc >= 70 && aloft.aglFt > 500) o.push(R(1, 'cruise', 'Cloud at cruise altitude, plan lower', aloft.cc));
+      if (h.da != null && h.da >= 8000) o.push(R(h.da >= 10000 ? 2 : 1, 'da', `Density altitude ${fmtInt(Math.round(h.da / 100) * 100)} ft`, h.da));
+      return o;
+    },
+  },
+  ifr: {
+    label: 'Flying IFR', sub: 'Minimums, icing, storms', win: '6-22', aviation: true,
+    icon: '<path d="M3 13h18M3 9h18"/><path d="M12 4v16"/><circle cx="12" cy="11" r="7.5"/>',
+    rules(h, ctx = {}) {
+      const o = [];
+      const terminal = ctx.terminal !== false;
+      const sev = 10000 - Math.min(isFinite(h.ceil) ? h.ceil : 9999, h.visSm * 600);
+      const cv = `ceiling ${ceilTxt(h.ceil)}, vis ${visTxt(h.visSm)}`;
+      if (terminal) {
+        if (h.ceil < 200 || h.visSm < 0.5) o.push(R(2, 'mins', `Below ILS minimums: ${cv}`, sev));
+        else if (h.ceil < 600 || h.visSm < 1.5) o.push(R(1, 'mins', `Near minimums: ${cv}`, sev));
+        if (h.ceil < 2000 || h.visSm < 3) o.push(R(0, 'alt', 'Alternate required (1-2-3 rule)', sev));
+      }
+      if (WX.frz(h.code)) o.push(R(2, 'ice', 'Freezing rain or drizzle', 99));
+      if (ctx.cruiseL) {
+        const l = h.levels.find(x => x.L === ctx.cruiseL);
+        if (l && l.cc != null && l.cc >= 50 && l.tC != null && l.tC <= 0.5 && l.tC >= -15) {
+          const likely = l.cc >= 80 && (h.precipIn > 0.005 || WX.snow(h.code));
+          o.push(R(likely ? 2 : 1, 'ice', `Icing ${likely ? 'likely' : 'possible'} at cruise (${Math.round(l.tC)}°C in cloud)`, l.cc - l.tC));
+        }
+      } else {
+        // at airports on a route, only the layers you climb or descend through matter
+        const ib = icingBand(h, ctx.cruiseFt ? ctx.cruiseFt + 2500 : 18500);
+        if (ib) { const likely = ib.dense && (h.precipIn > 0.005 || WX.snow(h.code)); o.push(R(likely ? 2 : 1, 'ice', `Icing ${likely ? 'likely' : 'possible'} in cloud ${bandTxt(ib)}`, (likely ? 100 : 0) + (ib.hi - ib.lo) / 1000)); }
+      }
+      if (WX.thunder(h.code)) o.push(R(2, 'storm', 'Thunderstorms', 10));
+      else if (h.cape >= 1500 && (h.pop ?? 0) >= 30) o.push(R(1, 'conv', 'Embedded storms possible', h.cape));
+      if (terminal) {
+        if (h.gustKt >= 35) o.push(R(2, 'wind', `Gusts ${Math.round(h.gustKt)} kt`, h.gustKt));
+        else if (h.gustKt >= 25) o.push(R(1, 'wind', `Gusts ${Math.round(h.gustKt)} kt`, h.gustKt));
+        else if (h.windKt >= 20) o.push(R(1, 'wind', `Wind ${Math.round(h.windKt)} kt, check crosswind`, h.windKt));
+      }
+      const aloft = h.levels.find(l => l.L === (ctx.cruiseL || 700));
+      if (aloft && aloft.ws >= 60) o.push(R(1, 'aloft', `Winds aloft ${Math.round(aloft.ws)} kt`, aloft.ws));
+      return o;
+    },
+  },
+};
+const LEVEL_WORD = ['Good', 'Marginal', 'Poor'];
+const MODE_WORD = {vfr: ['Go', 'Marginal', 'No-go'], ifr: ['Go', 'Marginal', 'No-go']};
+const word = (mode, lv) => (MODE_WORD[mode] || LEVEL_WORD)[lv];
+
+/* Evaluate one hour */
+function evalHour(mode, h, ctx) {
+  const rs = MODES[mode].rules(h, ctx);
+  const lv = rs.reduce((m, r) => Math.max(m, r.lv), 0);
+  return {lv, rs};
+}
+
+/* Merge reasons across hours/points: keep worst instance per key */
+function mergeReasons(items) { // items: [{rs, label}] ; label used for "when/where"
+  const by = new Map();
+  for (const it of items) for (const r of it.rs) {
+    const cur = by.get(r.k);
+    if (!cur) by.set(r.k, {...r, n: 1, labels: [it.label], first: it, last: it});
+    else { cur.n++; cur.labels.push(it.label); cur.last = it; if (r.lv > cur.lv || (r.lv === cur.lv && r.v > cur.v)) { cur.lv = r.lv; cur.t = r.t; cur.v = r.v; } }
+  }
+  return [...by.values()].sort((a, b) => b.lv - a.lv || b.n - a.n || b.v - a.v);
+}
+
+/* Hours window for a day */
+const HOUR_OPTS = [['auto', 'Best for activity'], ['day', 'Daylight'], ['6-12', 'Morning'], ['10-16', 'Midday'], ['12-18', 'Afternoon'], ['16-22', 'Evening'], ['0-24', 'All day']];
+function windowFor(sel, mode, sun) {
+  const w = sel === 'auto' ? MODES[mode].win : sel;
+  if (w === 'day') {
+    if (sun && sun.rise) return {fromT: sun.rise, toT: sun.set};
+    if (sun && sun.polar === 'day') return {a: 0, b: 24};
+    return {a: 7, b: 18};
+  }
+  const [a, b] = w.split('-').map(Number); return {a, b};
+}
+
+/* Summarise one local day for one location */
+function summariseDay(mode, loc, iso, sel, ctx) {
+  const off = loc.utc_offset_seconds || 0;
+  const T = loc.hourly.time;
+  const idx = []; for (let i = 0; i < T.length; i++) if (localDate(T[i], off) === iso) idx.push(i);
+  if (!idx.length) return null;
+  const sun = sunTimes(loc.latitude, loc.longitude, iso);
+  const win = windowFor(sel, mode, sun);
+  const inWin = t => win.fromT != null ? (t + 1800 >= win.fromT && t + 1800 <= win.toT) : (localHour(t, off) >= win.a && localHour(t, off) < win.b);
+  const hours = idx.map(i => { const h = hourRec(loc, i); const e = evalHour(mode, h, ctx); return {h, ...e, inWin: inWin(h.t), hr: localHour(h.t, off)}; });
+  const W = hours.filter(x => x.inWin);
+  if (!W.length) return {iso, hours, W, lv: null};
+  const nPoor = W.filter(x => x.lv === 2).length, nMarg = W.filter(x => x.lv === 1).length;
+  const lv = nPoor / W.length >= 0.5 ? 2 : (nPoor === 0 && nMarg / W.length <= 0.25) ? 0 : 1;
+  // best contiguous good run
+  let best = null, run = null;
+  for (const x of W) { if (x.lv === 0) { if (!run) run = {a: x.hr, b: x.hr + 1}; else run.b = x.hr + 1; if (!best || run.b - run.a > best.b - best.a) best = {...run}; } else run = null; }
+  const reasons = mergeReasons(W.filter(x => x.rs.length).map(x => ({rs: x.rs, label: x.hr})));
+  const withTimes = reasons.map(r => {
+    if (r.lv === 0) return r;
+    const hrs = W.filter(x => x.rs.some(q => q.k === r.k && q.lv >= 1)).map(x => x.hr);
+    let when = '';
+    if (hrs.length && hrs.length < W.length * 0.8) { const a = Math.min(...hrs), b = Math.max(...hrs) + 1; when = hrs.length === b - a ? ` ${hourRange(a, b)}` : ` from ${hourName(a)}`; }
+    return {...r, when};
+  });
+  const temps = W.map(x => x.h.tF).filter(v => v != null);
+  const allT = hours.map(x => x.h.tF).filter(v => v != null);
+  // representative weather: most severe code in window
+  const sevOf = c => c >= 95 ? 9 : WX.frz(c) ? 8 : WX.snow(c) ? 7 : WX.rain(c) ? (c >= 63 || c >= 81 ? 6 : 5) : WX.fog(c) ? 4 : c === 3 ? 3 : c === 2 ? 2 : 1;
+  const codes = W.map(x => x.h.code).filter(c => c != null);
+  let code = null;
+  if (codes.length) {
+    const counts = {}; codes.forEach(c => counts[c] = (counts[c] || 0) + 1);
+    const lasting = Object.keys(counts).map(Number).filter(c => c < 45 || counts[c] >= Math.max(2, codes.length * 0.2));
+    const pool = lasting.length ? lasting : Object.keys(counts).map(Number);
+    code = pool.reduce((m, c) => sevOf(c) > sevOf(m) || (sevOf(c) === sevOf(m) && counts[c] > counts[m]) ? c : m, pool[0]);
+  }
+  const cats = W.map(x => x.h.cat);
+  const worstCat = cats.reduce((m, c) => CAT_RANK[c] > CAT_RANK[m] ? c : m, 'VFR');
+  return {iso, hours, W, lv, nPoor, nMarg, best, reasons: withTimes, hi: allT.length ? Math.max(...allT) : null, lo: allT.length ? Math.min(...allT) : null, code, worstCat, sun, win};
+}
+
+/* ============================================================
+   State
+   ============================================================ */
+const DEFAULT_STATE = () => ({
+  v: 1, mode: 'outdoors', view: 'places',
+  places: [{name: 'Anaheim', sub: 'California', lat: 33.8353, lon: -117.9145}],
+  start: todayISO(), end: addDays(todayISO(), 6), hours: 'auto',
+  route: {
+    stops: [{q: 'Anaheim, CA', name: 'Anaheim', sub: 'California', lat: 33.8353, lon: -117.9145}, {q: 'Las Vegas, NV', name: 'Las Vegas', sub: 'Nevada', lat: 36.1750, lon: -115.1372}],
+    date: todayISO(), time: '09:00', days: 1, speed: 60, tas: 120, alt: 6500, dwell: 30, roads: true,
+  },
+});
+let S = loadState();
+function loadState() {
+  let s = null;
+  const m = location.hash.match(/[#&]p=([^&]+)/);
+  if (m) { try { s = JSON.parse(b64d(m[1])); } catch {} }
+  if (!s) s = store.get('wx:state');
+  const d = DEFAULT_STATE();
+  if (!s || s.v !== 1) return d;
+  s = {...d, ...s, route: {...d.route, ...(s.route || {})}};
+  if (!MODES[s.mode]) s.mode = 'outdoors';
+  return s;
+}
+function saveState() {
+  store.set('wx:state', S);
+  const h = '#p=' + b64e(JSON.stringify(S));
+  try { history.replaceState(null, '', h); } catch {}
+}
+
+/* ============================================================
+   UI: controls
+   ============================================================ */
+function renderModes() {
+  $('#modes').innerHTML = Object.entries(MODES).map(([k, m]) =>
+    `<button class="mode" type="button" data-mode="${k}" aria-pressed="${S.mode === k}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${m.icon}</svg><span><b>${esc(m.label)}</b><small>${esc(m.sub)}</small></span></button>`).join('');
+}
+$('#modes').addEventListener('click', e => {
+  const b = e.target.closest('[data-mode]'); if (!b) return;
+  S.mode = b.dataset.mode;
+  if (MODES[S.mode].aviation) S.route.roads = false;
+  renderModes(); renderTravel(); saveState(); run();
+});
+function setView(v) {
+  S.view = v;
+  $('#tabPlaces').setAttribute('aria-selected', v === 'places'); $('#tabRoute').setAttribute('aria-selected', v === 'route');
+  $('#placesForm').hidden = v !== 'places'; $('#routeForm').hidden = v !== 'route';
+}
+$('#tabPlaces').onclick = () => { setView('places'); saveState(); run(); };
+$('#tabRoute').onclick = () => { setView('route'); saveState(); run(); };
+
+function renderChips() {
+  $('#placeChips').innerHTML = S.places.length ? S.places.map((p, i) =>
+    `<span class="chip"><span>${esc(p.name)}${p.sub ? ` <small style="color:var(--muted)">${esc(p.sub)}</small>` : ''}</span><button type="button" data-rm="${i}" aria-label="Remove ${esc(p.name)}">✕</button></span>`).join('')
+    : '<p class="hint">Add at least one place to see its outlook.</p>';
+}
+$('#placeChips').addEventListener('click', e => { const b = e.target.closest('[data-rm]'); if (!b) return; S.places.splice(+b.dataset.rm, 1); renderChips(); saveState(); run(); });
+
+/* autocomplete */
+function attachAC(input, onPick) {
+  const host = input.closest('.ac') || input.parentElement; host.classList.add('ac');
+  let list = null, items = [], on = -1, timer = null, seq = 0;
+  const close = () => { list?.remove(); list = null; items = []; on = -1; };
+  const draw = () => {
+    if (!items.length) return close();
+    if (!list) { list = document.createElement('div'); list.className = 'ac-list'; host.appendChild(list); }
+    list.innerHTML = items.map((r, i) => `<button type="button" class="ac-item${i === on ? ' on' : ''}" data-i="${i}">${esc(r.name)}<small>${esc(r.sub || '')}</small></button>`).join('');
+  };
+  input.addEventListener('input', () => {
+    delete input.dataset.loc; clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 3 || COORD_RE.test(q) || (CODE_RE.test(q) && q === q.toUpperCase())) return close();
+    timer = setTimeout(async () => { const my = ++seq; try { const r = await geocodeSearch(q, 6); if (my === seq) { items = r; on = -1; draw(); } } catch { close(); } }, 260);
+  });
+  input.addEventListener('keydown', e => {
+    if (!list) return;
+    if (e.key === 'ArrowDown') { on = Math.min(items.length - 1, on + 1); draw(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { on = Math.max(0, on - 1); draw(); e.preventDefault(); }
+    else if (e.key === 'Enter' && on >= 0) { e.preventDefault(); pick(on); }
+    else if (e.key === 'Escape') close();
+  });
+  const pick = i => { const r = items[i]; close(); onPick(r); };
+  host.addEventListener('mousedown', e => { const b = e.target.closest('.ac-item'); if (b) { e.preventDefault(); pick(+b.dataset.i); } });
+  input.addEventListener('blur', () => setTimeout(close, 150));
+}
+attachAC($('#placeInput'), r => { addPlace(r); $('#placeInput').value = ''; });
+async function addPlace(p) {
+  if (S.places.some(x => Math.abs(x.lat - p.lat) < 0.01 && Math.abs(x.lon - p.lon) < 0.01)) { toast('Already added'); return; }
+  S.places.push({name: p.name, sub: p.sub || '', lat: p.lat, lon: p.lon});
+  renderChips(); saveState(); run();
+}
+$('#placesForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = $('#placeInput').value.trim(); if (!q) return;
+  try { const p = await resolvePlace(q); if (!p) { toast(`Couldn't find “${q}”`); return; } $('#placeInput').value = ''; addPlace(p); }
+  catch { toast('Place search failed. Check your connection and try again.'); }
+});
+function renderHours() { $('#hoursSel').innerHTML = HOUR_OPTS.map(([v, l]) => `<option value="${v}"${S.hours === v ? ' selected' : ''}>${l}</option>`).join(''); }
+$('#hoursSel').onchange = e => { S.hours = e.target.value; saveState(); run(); };
+$('#startDate').onchange = e => { S.start = e.target.value; if (S.end < S.start) { S.end = S.start; $('#endDate').value = S.end; } saveState(); };
+$('#endDate').onchange = e => { S.end = e.target.value; if (S.end < S.start) { S.start = S.end; $('#startDate').value = S.start; } saveState(); };
+$('#placesGo').onclick = () => run();
+
+/* route controls */
+function renderStops() {
+  const n = S.route.stops.length;
+  $('#stops').innerHTML = S.route.stops.map((s, i) => `
+    <div class="stop"><span class="dot">${i === 0 ? 'A' : i === n - 1 ? 'B' : i}</span>
+      <div class="ac"><input data-stop="${i}" value="${esc(s.q || s.name || '')}" placeholder="${i === 0 ? 'Start' : i === n - 1 ? 'Destination' : 'Stop'}: city, airport or lat,lon" aria-label="${i === 0 ? 'Start' : i === n - 1 ? 'Destination' : 'Stop ' + i}"></div>
+      ${n > 2 ? `<button type="button" class="rm" data-rmstop="${i}" aria-label="Remove stop">✕</button>` : '<span style="width:30px;flex:none"></span>'}
+    </div>`).join('');
+  $('#stops').querySelectorAll('input[data-stop]').forEach(inp => {
+    const i = +inp.dataset.stop;
+    attachAC(inp, r => { S.route.stops[i] = {q: `${r.name}${r.sub ? ', ' + r.sub : ''}`, ...r}; inp.value = S.route.stops[i].q; saveState(); });
+    inp.addEventListener('change', () => { const cur = S.route.stops[i]; if (!cur || inp.value.trim() !== cur.q) S.route.stops[i] = {q: inp.value.trim()}; saveState(); });
+  });
+}
+$('#stops').addEventListener('click', e => { const b = e.target.closest('[data-rmstop]'); if (!b) return; S.route.stops.splice(+b.dataset.rmstop, 1); renderStops(); saveState(); });
+$('#addStop').onclick = () => { S.route.stops.splice(S.route.stops.length - 1, 0, {q: ''}); renderStops(); saveState(); $(`#stops input[data-stop="${S.route.stops.length - 2}"]`)?.focus(); };
+function renderTravel() {
+  const r = S.route, avi = MODES[S.mode].aviation;
+  $('#travelRow').innerHTML = avi ? `
+    <label class="field w-xs"><span>True airspeed</span><input type="number" id="tas" min="40" max="500" step="5" value="${r.tas}" inputmode="numeric"></label>
+    <label class="field w-xs"><span>Cruise alt (ft)</span><input type="number" id="alt" min="1000" max="25000" step="500" value="${r.alt}" inputmode="numeric"></label>
+    <label class="field w-xs"><span>Stop time (min)</span><input type="number" id="dwell" min="0" max="600" step="5" value="${r.dwell}" inputmode="numeric"></label>
+    <p class="hint" style="flex-basis:100%">Groundspeed uses forecast winds at cruise altitude. Straight-line legs between stops, no climb or descent allowance.</p>` : `
+    <label class="field w-xs"><span>Avg speed (mph)</span><input type="number" id="speed" min="5" max="90" step="5" value="${r.speed}" inputmode="numeric"></label>
+    <label class="field w-xs"><span>Stop time (min)</span><input type="number" id="dwell" min="0" max="600" step="5" value="${r.dwell}" inputmode="numeric"></label>
+    <label class="field w-sm" style="flex-direction:row;align-items:center;gap:8px;padding-bottom:8px"><input type="checkbox" id="roads" ${r.roads ? 'checked' : ''} style="width:auto"> <span style="text-transform:none;letter-spacing:0;font-size:.88rem;color:var(--ink);font-weight:500">Follow roads</span></label>`;
+  ['tas', 'alt', 'dwell', 'speed'].forEach(id => { const el = $('#' + id); if (el) el.onchange = () => { const v = +el.value; if (isFinite(v) && v >= 0) S.route[id] = v; saveState(); }; });
+  const rd = $('#roads'); if (rd) rd.onchange = () => { S.route.roads = rd.checked; saveState(); };
+}
+$('#depDate').onchange = e => { S.route.date = e.target.value; saveState(); };
+$('#depTime').onchange = e => { S.route.time = e.target.value || '09:00'; saveState(); };
+$('#compareDays').onchange = e => { S.route.days = +e.target.value; saveState(); };
+$('#routeGo').onclick = () => run();
+
+/* theme + share */
+function applyTheme(t) { if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme'); }
+applyTheme(store.get('wx:theme'));
+$('#themeBtn').onclick = () => {
+  const cur = document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'day' : 'night');
+  const next = cur === 'day' ? 'night' : 'day'; applyTheme(next); store.set('wx:theme', next); if (mapObj) setTiles();
+};
+$('#shareBtn').onclick = async () => {
+  saveState();
+  try { await navigator.clipboard.writeText(location.href); toast('Link copied'); }
+  catch { prompt('Copy this link', location.href); }
+};
+
+/* ============================================================
+   Places view
+   ============================================================ */
+let runSeq = 0;
+function horizon() { return addDays(todayISO(), 15); }
+function setStatus(html) { $('#results').innerHTML = html; }
+const loading = msg => `<div class="status"><span class="spin"></span>${esc(msg)}</div>`;
+
+async function runPlaces(my) {
+  if (!S.places.length) { setStatus('<p class="hint">Add a place above to see its outlook.</p>'); return; }
+  const start = S.start < todayISO() ? todayISO() : S.start;
+  const end = S.end < start ? start : S.end;
+  if (daysBetween(start, end) > 45) { setStatus('<div class="err">Pick a date range of 45 days or less.</div>'); return; }
+  const dates = []; for (let d = start; d <= end; d = addDays(d, 1)) dates.push(d);
+  const fStart = addDays(start, -1) < todayISO() ? todayISO() : addDays(start, -1), fEnd = end > horizon() ? horizon() : end;
+  setStatus(loading('Getting forecasts…'));
+  const mode = S.mode, avi = MODES[mode].aviation;
+  let data = null;
+  if (fStart <= fEnd) {
+    try { data = await fetchForecast(S.places, {aviation: avi, start: fStart, end: fEnd}); }
+    catch (e) { if (my !== runSeq) return; setStatus(`<div class="err">Couldn't load forecasts (${esc(e.message)}). Wait a minute and press Check weather again.</div>`); return; }
+  }
+  if (my !== runSeq) return;
+  const summaries = S.places.map((p, i) => {
+    const loc = data ? data[i] : null;
+    const ctx = {};
+    return {p, loc, days: dates.map(iso => (loc ? summariseDay(mode, loc, iso, S.hours, ctx) : null) || {iso, lv: null, na: true})};
+  });
+  const out = [];
+  if (summaries.length > 1) out.push(matrixHTML(summaries));
+  summaries.forEach((s, i) => out.push(locHTML(s, i)));
+  out.push(legendHTML());
+  $('#results').innerHTML = out.join('');
+  wireCards(summaries);
+}
+function matrixHTML(summaries) {
+  const dates = summaries[0].days.map(d => d.iso);
+  return `<section class="loc"><p class="section-title">At a glance</p><div class="matrix-wrap"><table class="matrix"><thead><tr><th></th>${dates.map(d => { const l = dayLabel(d); return `<th>${l.wd}<br><span style="font-weight:400">${isoParts(d).d}</span></th>`; }).join('')}</tr></thead><tbody>${summaries.map(s => `<tr><th class="l" title="${esc(s.p.name)}">${esc(s.p.name)}</th>${s.days.map(d => d.lv == null ? `<td class="mna" title="No forecast yet">·</td>` : `<td class="m${d.lv}" title="${esc(word(S.mode, d.lv))}${d.reasons && d.reasons[0] && d.reasons[0].lv ? ': ' + esc(d.reasons[0].t) : ''}">${['✓', '!', '✕'][d.lv]}</td>`).join('')}</tr>`).join('')}</tbody></table></div></section>`;
+}
+function keyDays(s) {
+  const ok = s.days.filter(d => d.lv != null);
+  if (!ok.length) return '';
+  const good = ok.filter(d => d.lv === 0).sort((a, b) => (a.nMarg - b.nMarg) || a.iso.localeCompare(b.iso)).slice(0, 3).sort((a, b) => a.iso.localeCompare(b.iso));
+  const poor = ok.filter(d => d.lv === 2);
+  const lbl = d => { const l = dayLabel(d.iso); return `${l.wd} ${isoParts(d.iso).d}`; };
+  const parts = [];
+  if (good.length) parts.push(`<span>Best: <b>${good.map(lbl).join(', ')}</b></span>`);
+  else { const least = [...ok].sort((a, b) => a.lv - b.lv || (a.nPoor + a.nMarg) - (b.nPoor + b.nMarg))[0]; parts.push(`<span>No clear good day. Least bad: <b>${lbl(least)}</b></span>`); }
+  if (poor.length) parts.push(`<span>Avoid: <b>${poor.slice(0, 4).map(d => `${lbl(d)}${d.reasons[0] && d.reasons[0].lv ? ` (${esc(d.reasons[0].t)})` : ''}`).join(', ')}</b></span>`);
+  return `<div class="keydays">${parts.join('')}</div>`;
+}
+function locHTML(s, li) {
+  const p = s.p, loc = s.loc;
+  const elevFt = loc && loc.elevation != null ? Math.round(loc.elevation * M_FT) : null;
+  const sub = [p.sub, elevFt != null ? `elev ${fmtInt(elevFt)} ft` : '', loc ? (loc.timezone_abbreviation || '').replace(/^GMT$/, 'UTC') : ''].filter(Boolean).join(' · ');
+  return `<section class="loc" data-loc="${li}">
+    <div class="loc-head"><h2>${esc(p.name)}</h2><span class="sub">${esc(sub)}</span></div>
+    ${keyDays(s)}
+    <div class="cards">${s.days.map((d, di) => cardHTML(d, li, di)).join('')}</div>
+  </section>`;
+}
+function cardHTML(d, li, di) {
+  const l = dayLabel(d.iso);
+  if (d.lv == null) {
+    const opens = addDays(d.iso, -15);
+    const msg = d.na && d.iso > horizon() ? `Forecast opens ${dayLabel(opens).wd} ${MO[isoParts(opens).m - 1]} ${isoParts(opens).d}` : 'No hours in window';
+    return `<div class="card vna"><div class="c-top"><div class="c-date"><b>${l.wd}</b><small>${l.md}</small></div><span class="pill pna">Not yet</span></div><p class="hint">${msg}</p></div>`;
+  }
+  const avi = MODES[S.mode].aviation;
+  const main = d.reasons.filter(r => r.lv > 0).slice(0, 2);
+  const notes = d.reasons.filter(r => r.lv === 0).slice(0, 1);
+  const rs = main.length ? main.map(r => `<li class="l${r.lv}">${esc(r.t)}${esc(r.when || '')}</li>`).join('') : `<li class="l0">${avi ? 'No flags in the window' : 'Nothing to worry about'}</li>`;
+  const bestTxt = d.lv !== 0 && d.best && d.best.b - d.best.a >= 2 ? `<div class="best">Best window <b>${hourRange(d.best.a, d.best.b)}</b></div>` : '';
+  const strip = `<div class="strip" aria-hidden="true">${d.W.map(x => `<i class="s${x.lv}" title="${hourName(x.hr)}"></i>`).join('')}</div>` + (avi ? `<div class="strip cat" aria-hidden="true">${d.W.map(x => `<i class="${x.h.cat}"></i>`).join('')}</div>` : '');
+  return `<button type="button" class="card v${d.lv}" data-card="${li}:${di}" aria-expanded="false">
+    <div class="c-top"><div class="c-date"><b>${l.wd}</b><small>${l.md}</small></div><span class="pill p${d.lv}">${word(S.mode, d.lv)}</span></div>
+    <div class="c-wx">${icon(wxIconKey(d.code))}<div class="c-temp"><b>${fmtInt(d.hi)}°</b> <span>/ ${fmtInt(d.lo)}°</span>${avi ? ` <span class="cat-chip cat-${d.worstCat}" title="Worst flight category in window">${d.worstCat}</span>` : ''}<div style="color:var(--muted);font-size:.78rem;line-height:1.2">${esc(wxText(d.code))}</div></div></div>
+    <ul class="reasons">${rs}${notes.map(r => `<li class="note">${esc(r.t)}</li>`).join('')}</ul>
+    ${bestTxt}
+    ${strip}
+  </button>`;
+}
+function hoursTable(rows, avi, winLabel) {
+  const head = avi ? '<th></th><th>Time</th><th>Cat</th><th>Ceiling</th><th>Vis</th><th>Wind</th><th>Temp</th><th>Frz lvl</th><th>Weather</th><th>Flags</th>'
+                   : '<th></th><th>Time</th><th>Weather</th><th>Temp</th><th>Feels</th><th>Rain</th><th>Wind</th><th>Flags</th>';
+  return `<div class="tbl-wrap"><table class="hours"><thead><tr>${head}</tr></thead><tbody>${rows.map(x => {
+    const h = x.h, flags = x.rs.filter(r => r.lv > 0).map(r => r.t).join('; ');
+    const wind = avi ? `${h.dir == null ? '' : pad3(h.dir)}@${Math.round(h.windKt)}${h.gustKt - h.windKt >= 5 ? 'G' + Math.round(h.gustKt) : ''} kt` : `${Math.round(h.windMph)}${h.gustMph - h.windMph >= 6 ? '–' + Math.round(h.gustMph) : ''} mph`;
+    const cls = x.inWin === false ? ' class="out"' : '';
+    return avi
+      ? `<tr${cls}><td class="rk"><i class="s${x.lv}"></i></td><td>${x.timeLbl}</td><td><span class="cat-chip cat-${h.cat}">${h.cat}</span></td><td>${ceilTxt(h.ceil)}</td><td>${visTxt(h.visSm)}</td><td>${wind}</td><td>${fmtInt(h.tF)}°F</td><td>${h.frzFt == null ? '–' : fmtInt(Math.round(h.frzFt / 100) * 100) + ' ft'}</td><td>${esc(wxText(h.code))}</td><td>${esc(flags)}</td></tr>`
+      : `<tr${cls}><td class="rk"><i class="s${x.lv}"></i></td><td>${x.timeLbl}</td><td>${esc(wxText(h.code))}</td><td>${fmtInt(h.tF)}°</td><td>${fmtInt(h.feelsF)}°</td><td>${h.pop ?? '–'}%</td><td>${wind}</td><td>${esc(flags)}</td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+const pad3 = d => String(Math.round(d / 10) * 10 % 360 || 360).padStart(3, '0');
+function wireCards(summaries) {
+  $('#results').querySelectorAll('[data-card]').forEach(btn => btn.addEventListener('click', () => {
+    const [li, di] = btn.dataset.card.split(':').map(Number);
+    const grid = btn.parentElement; const open = grid.querySelector('.detail');
+    const was = btn.getAttribute('aria-expanded') === 'true';
+    grid.querySelectorAll('[data-card]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+    open?.remove();
+    if (was) return;
+    btn.setAttribute('aria-expanded', 'true');
+    const d = summaries[li].days[di], avi = MODES[S.mode].aviation;
+    const sun = d.sun && d.sun.rise ? ` · Sunrise ${clock(d.sun.rise, summaries[li].loc.utc_offset_seconds)}, sunset ${clock(d.sun.set, summaries[li].loc.utc_offset_seconds)}` : '';
+    const rows = d.hours.map(x => ({...x, timeLbl: hourName(x.hr)}));
+    const all = d.reasons.map(r => `<li class="${r.lv ? 'l' + r.lv : 'note'}">${esc(r.t)}${esc(r.when || '')}</li>`).join('');
+    const det = document.createElement('div'); det.className = 'detail';
+    det.innerHTML = `<h3>${dayLabel(d.iso).wd}, ${dayLabel(d.iso).md}: ${word(S.mode, d.lv).toLowerCase()} for ${esc(MODES[S.mode].label.toLowerCase())}</h3>
+      <p class="hint">${d.W.length} hours checked (${d.nPoor} poor, ${d.nMarg} marginal)${sun}. Greyed rows are outside the hours you picked.</p>
+      ${all ? `<ul class="reasons">${all}</ul>` : ''}
+      ${hoursTable(rows, avi)}`;
+    // insert after the last card in the same visual row
+    const cards = [...grid.querySelectorAll('[data-card]')]; const top = btn.offsetTop; let after = btn;
+    for (const c of cards) if (c.offsetTop === top) after = c;
+    after.after(det);
+    det.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+  }));
+}
+function legendHTML(route) {
+  const avi = MODES[S.mode].aviation;
+  return `<div class="legend"><span><i style="background:var(--good)"></i>${word(S.mode, 0)}</span><span><i style="background:var(--warn)"></i>${word(S.mode, 1)}</span><span><i style="background:var(--bad)"></i>${word(S.mode, 2)}</span>${avi ? '<span style="margin-left:8px">Flight category:</span><span><i style="background:var(--vfr)"></i>VFR</span><span><i style="background:var(--mvfr)"></i>MVFR</span><span><i style="background:var(--ifr)"></i>IFR</span><span><i style="background:var(--lifr)"></i>LIFR</span>' : ''}<span>${route ? 'Dots show the risk at each point when you pass it.' : 'Bars show each hour in the window. Tap a day for hourly detail.'}</span></div>`;
+}
+
+/* ============================================================
+   Route view
+   ============================================================ */
+let mapObj = null, tileLayer = null;
+function setTiles() {
+  if (!mapObj) return;
+  const dark = (document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'day' : 'night')) === 'night';
+  if (!tileLayer) {
+    tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, referrerPolicy: 'strict-origin-when-cross-origin',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
+    }).addTo(mapObj);
+  }
+  mapObj.getContainer().classList.toggle('dark-tiles', dark);
+}
+
+async function resolveStops() {
+  const out = [];
+  for (let i = 0; i < S.route.stops.length; i++) {
+    const s = S.route.stops[i];
+    if (s.lat != null && s.lon != null) { out.push(s); continue; }
+    if (!s.q) throw new Error(`Stop ${i + 1} is empty. Enter a place or remove it.`);
+    const r = await resolvePlace(s.q);
+    if (!r) throw new Error(`Couldn't find “${s.q}”. Try a city name, an airport code or lat,lon.`);
+    S.route.stops[i] = {q: s.q, ...r}; out.push(S.route.stops[i]);
+  }
+  saveState();
+  return out;
+}
+/* Build a polyline [{lat,lon}] with cumulative miles and stop positions */
+async function buildPath(stops, avi) {
+  let pts = [], stopAt = [], note = '';
+  if (!avi && S.route.roads) {
+    try {
+      const coords = stops.map(s => `${s.lon.toFixed(5)},${s.lat.toFixed(5)}`).join(';');
+      const d = await getJSON(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`, {cache: 6 * 3600e3, timeout: 15000});
+      const rt = d.routes && d.routes[0];
+      if (rt) {
+        pts = rt.geometry.coordinates.map(([lon, lat]) => ({lat, lon}));
+        const cum = cumulative(pts);
+        let acc = 0; stopAt = [0];
+        for (const leg of rt.legs) { acc += leg.distance / 1609.34; stopAt.push(acc); }
+        const scale = cum[cum.length - 1] / acc; stopAt = stopAt.map(x => x * scale);
+        return {pts, cum, stopAt, note: 'Road route from OSRM.'};
+      }
+    } catch { note = 'Road routing was unavailable, so distances are straight-line plus 20%. '; }
+  }
+  // great-circle legs
+  pts = [stops[0]]; stopAt = [0];
+  for (let i = 1; i < stops.length; i++) {
+    const a = stops[i - 1], b = stops[i], d = hav(a, b), n = Math.max(1, Math.ceil(d / 20));
+    for (let k = 1; k <= n; k++) pts.push(gcInterp(a, b, k / n));
+  }
+  const cum = cumulative(pts);
+  const factor = avi ? 1 : 1.2;
+  for (let i = 1, j = 0; i < stops.length; i++) { // find vertex index of each stop
+    let acc = 0; for (let k = 1; k <= i; k++) acc += hav(stops[k - 1], stops[k]); stopAt.push(acc);
+  }
+  return {pts, cum, stopAt, factor, note: avi ? 'Straight-line legs.' : note || 'Straight-line distances plus 20% for roads.'};
+}
+function cumulative(pts) { const c = [0]; for (let i = 1; i < pts.length; i++) c.push(c[i - 1] + hav(pts[i - 1], pts[i])); return c; }
+function pointAt(path, d) {
+  const {pts, cum} = path; if (d <= 0) return {...pts[0]}; if (d >= cum[cum.length - 1]) return {...pts[pts.length - 1]};
+  let lo = 0, hi = cum.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= d) lo = m; else hi = m; }
+  const f = (d - cum[lo]) / (cum[hi] - cum[lo] || 1); return gcInterp(pts[lo], pts[hi], f);
+}
+function samplePoints(path, stops) {
+  const total = path.cum[path.cum.length - 1];
+  const spacing = clamp(total / 11, 20, 150);
+  const marks = [];
+  for (let i = 0; i < stops.length; i++) marks.push({d: path.stopAt[i], stop: i});
+  for (let i = 1; i < stops.length; i++) {
+    const a = path.stopAt[i - 1], b = path.stopAt[i], n = Math.floor((b - a) / spacing);
+    for (let k = 1; k <= n; k++) { const d = a + (b - a) * k / (n + 1); marks.push({d}); }
+  }
+  marks.sort((x, y) => x.d - y.d);
+  return marks.map(m => ({...m, ...(m.stop != null ? {lat: stops[m.stop].lat, lon: stops[m.stop].lon} : pointAt(path, m.d))}));
+}
+/* Value of the forecast at unix time t for sample point j */
+function recAt(fc, t) {
+  const T = fc.hourly.time; if (!T || !T.length) return null;
+  const i = Math.round((t - T[0]) / 3600);
+  if (i < 0 || i >= T.length) return null;
+  return hourRec(fc, i);
+}
+/* Compute ETA at every sample point for a departure (unix seconds) */
+function timeline(samples, fcs, stops, dep, avi, path) {
+  const r = S.route, out = []; let t = dep;
+  const cruiseL = levelFor(r.alt);
+  for (let j = 0; j < samples.length; j++) {
+    const s = samples[j];
+    if (j > 0) {
+      const prev = samples[j - 1];
+      const dist = (s.d - prev.d) * (path.factor || 1);
+      if (avi) {
+        const tas = Math.max(40, r.tas);
+        const h = recAt(fcs[j - 1], t); const lv = h && h.levels.find(l => l.L === cruiseL);
+        let gs = tas;
+        if (lv && lv.wd != null) { const crs = bearing(prev, s); const to = (lv.wd + 180) % 360; const along = lv.ws * Math.cos((to - crs) * RAD), cross = lv.ws * Math.sin((to - crs) * RAD); gs = Math.sqrt(Math.max(0, tas * tas - cross * cross)) + along; }
+        gs = Math.max(30, gs);
+        t += (dist / 1.15078) / gs * 3600; // statute -> nautical miles
+        s.gs = gs;
+      } else t += dist / Math.max(5, r.speed) * 3600;
+    }
+    const arrive = t;
+    const isStop = s.stop != null, mid = isStop && s.stop > 0 && s.stop < stops.length - 1;
+    const h = recAt(fcs[j], arrive);
+    const terminal = isStop;
+    const ctx = {terminal, cruiseL: avi && !terminal ? cruiseL : null, cruiseFt: avi ? r.alt : null};
+    const e = h ? evalHour(S.mode, h, ctx) : null;
+    out.push({s, t: arrive, h, ...(e || {lv: null, rs: []})});
+    if (mid) t += (r.dwell || 0) * 60;
+  }
+  return out;
+}
+function routeSummary(tl) {
+  const known = tl.filter(x => x.lv != null);
+  if (!known.length) return {lv: null};
+  const lv = Math.max(...known.map(x => x.lv));
+  const score = known.reduce((a, x) => a + x.lv * x.lv, 0);
+  return {lv, score, missing: tl.length - known.length};
+}
+function depUnix(dateISO, timeHHMM, off) { const [y, m, d] = dateISO.split('-').map(Number); const [hh, mm] = (timeHHMM || '09:00').split(':').map(Number); return Date.UTC(y, m - 1, d, hh, mm) / 1000 - off; }
+
+let routeCache = null;
+async function runRoute(my) {
+  const avi = MODES[S.mode].aviation, r = S.route;
+  if (S.route.stops.length < 2) { setStatus('<div class="err">Add a start and a destination.</div>'); return; }
+  setStatus(loading('Finding the route…'));
+  let stops, path, samples;
+  try { stops = await resolveStops(); renderStops(); path = await buildPath(stops, avi); samples = samplePoints(path, stops); }
+  catch (e) { if (my === runSeq) setStatus(`<div class="err">${esc(e.message)}</div>`); return; }
+  if (my !== runSeq) return;
+  const days = clamp(+r.days || 1, 1, 7);
+  const dep0 = r.date < todayISO() ? todayISO() : r.date;
+  const total = path.cum[path.cum.length - 1] * (path.factor || 1);
+  const hoursEst = avi ? total / 1.15078 / Math.max(40, r.tas) + 2 : total / Math.max(5, r.speed) + (stops.length - 2) * (r.dwell || 0) / 60;
+  const fStart = addDays(dep0, -1) < todayISO() ? todayISO() : addDays(dep0, -1);
+  let fEnd = addDays(dep0, days - 1 + Math.ceil((hoursEst + 7) / 24));
+  if (fEnd > horizon()) fEnd = horizon();
+  if (dep0 > horizon()) { setStatus(`<div class="err">That departure is past the forecast range. Forecasts reach ${dayLabel(horizon()).wd} ${dayLabel(horizon()).md}.</div>`); return; }
+  setStatus(loading(`Getting forecasts for ${samples.length} points along ${fmtInt(total)} miles…`));
+  let fcs;
+  try { fcs = await fetchForecast(samples, {aviation: avi, start: fStart, end: fEnd}); }
+  catch (e) { if (my === runSeq) setStatus(`<div class="err">Couldn't load forecasts (${esc(e.message)}). Wait a minute and press Check route again.</div>`); return; }
+  if (my !== runSeq) return;
+  const off = fcs[0].utc_offset_seconds || 0;
+  const plans = [];
+  for (let k = 0; k < days; k++) {
+    const iso = addDays(dep0, k); if (iso > horizon()) break;
+    const dep = depUnix(iso, r.time, off);
+    const tl = timeline(samples, fcs, stops, dep, avi, path);
+    plans.push({iso, dep, tl, sum: routeSummary(tl)});
+  }
+  routeCache = {stops, path, samples, fcs, plans, avi, off, total, sel: 0, names: {}};
+  drawRoute(my);
+  // name intermediate points (non-blocking)
+  samples.forEach((s, j) => {
+    if (s.stop != null) { routeCache.names[j] = stops[s.stop].name; return; }
+    reverseName(s.lat, s.lon).then(n => { if (my !== runSeq || !n) return; routeCache.names[j] = n; const el = document.querySelector(`[data-ptname="${j}"]`); if (el) el.textContent = n; });
+  });
+}
+function ptName(j) { const c = routeCache; const s = c.samples[j]; return c.names[j] || (s.stop != null ? c.stops[s.stop].name : 'En route'); }
+function bestDeparture(plan) {
+  const c = routeCache; let best = null;
+  for (let dh = -3; dh <= 6; dh++) {
+    if (!dh) continue;
+    const dep = plan.dep + dh * 3600; if (dep < Date.now() / 1000) continue;
+    const tl = timeline(c.samples, c.fcs, c.stops, dep, c.avi, c.path); const s = routeSummary(tl);
+    if (s.lv == null || s.missing) continue;
+    if (!best || s.lv < best.s.lv || (s.lv === best.s.lv && (s.score < best.s.score || (s.score === best.s.score && Math.abs(dh) < Math.abs(best.dh))))) best = {dh, dep, s, tl};
+  }
+  if (!best) return null;
+  const cur = plan.sum;
+  if (best.s.lv < cur.lv || (best.s.lv === cur.lv && best.s.score <= cur.score - 2)) return best;
+  return null;
+}
+function routeReasons(tl) {
+  return mergeReasons(tl.filter(x => x.rs.length).map((x, j) => ({rs: x.rs, label: x, j: tl.indexOf(x)})));
+}
+function drawRoute(my) {
+  const c = routeCache, plan = c.plans[c.sel];
+  if (!plan) { setStatus('<div class="err">No departures fall inside the forecast range.</div>'); return; }
+  const mode = S.mode;
+  const out = [];
+  // overall verdict
+  const sum = plan.sum;
+  const reasons = routeReasons(plan.tl);
+  const top = reasons.filter(r => r.lv > 0).slice(0, 3).map(r => {
+    const x = r.labels.find(lb => lb.rs.some(q => q.k === r.k && q.lv === r.lv)) || r.first.label;
+    const j = plan.tl.indexOf(x);
+    return `<li class="l${r.lv}">${esc(r.t)} near <span data-ptname="${j}">${esc(ptName(j))}</span>, ${clock(x.t, c.off)}${r.n > 1 ? ` (${r.n} points)` : ''}</li>`;
+  }).join('');
+  const arr = plan.tl[plan.tl.length - 1];
+  const durH = (arr.t - plan.dep) / 3600;
+  const dur = `${Math.floor(durH)} h ${pad(Math.round((durH % 1) * 60))} min`;
+  const headline = sum.lv == null ? 'No forecast for this departure yet'
+    : sum.lv === 0 ? `${word(mode, 0)} the whole way`
+    : sum.lv === 1 ? `${word(mode, 1)}: some ${MODES[mode].aviation ? 'conditions to plan around' : 'rough patches'}`
+    : `${word(mode, 2)} on part of the route`;
+  const bd = sum.lv ? bestDeparture(plan) : null;
+  const bdTxt = bd ? `<div class="suggest">Leaving at <b>${clock(bd.dep, c.off)}</b> instead (${bd.dh > 0 ? bd.dh + ' h later' : -bd.dh + ' h earlier'}) looks ${bd.s.lv < sum.lv ? `<b>${word(mode, bd.s.lv).toLowerCase()}</b> overall` : 'better, with fewer flagged points'}.</div>` : '';
+  out.push(`<section class="verdict">
+    <div class="big p${sum.lv ?? 'na'}">${sum.lv == null ? '–' : word(mode, sum.lv)}</div>
+    <h2>${esc(headline)}</h2>
+    <div class="meta">${dayLabel(plan.iso).wd} ${dayLabel(plan.iso).md} · Depart ${clock(plan.dep, c.off)}, arrive about ${clock(arr.t, c.offArr ?? c.fcs[c.fcs.length - 1].utc_offset_seconds)} · ${fmtInt(c.total)} mi${c.avi ? ` (${fmtInt(c.total / 1.15078)} nm)` : ''} · ${dur}</div>
+    ${top ? `<ul class="reasons">${top}</ul>` : `<ul class="reasons"><li class="l0">No flags at any point along the way</li></ul>`}
+    ${bdTxt}
+  </section>`);
+  // compare days
+  if (c.plans.length > 1) {
+    out.push(`<p class="section-title">Same departure time, by day</p><div class="daystrip">${c.plans.map((p, i) => {
+      const rr = routeReasons(p.tl).filter(r => r.lv > 0)[0];
+      return `<button type="button" class="daybtn" data-plan="${i}" aria-pressed="${i === c.sel}"><b>${dayLabel(p.iso).wd} ${isoParts(p.iso).d}</b><span class="pill p${p.sum.lv ?? 'na'}">${p.sum.lv == null ? 'No data' : word(mode, p.sum.lv)}</span><small>${rr ? esc(rr.t) : 'No flags'}</small></button>`;
+    }).join('')}</div>`);
+  }
+  out.push('<div id="map" role="img" aria-label="Route map with risk at each point"></div>');
+  // timeline
+  out.push(`<p class="section-title">Along the route</p><div class="timeline">${plan.tl.map((x, j) => pointHTML(x, j, plan)).join('')}</div>`);
+  const enrouteNote = mode === 'ifr' ? ' En route points check icing, storms and winds at your cruise altitude; ceilings and visibility count at the airports.' : '';
+  out.push(`<p class="hint">${esc(c.path.note || '')} Times are local to each point. Each point uses the forecast hour closest to when you pass it.${enrouteNote}</p>`);
+  out.push(legendHTML(true));
+  $('#results').innerHTML = out.join('');
+  $('#results').querySelectorAll('[data-plan]').forEach(b => b.onclick = () => { c.sel = +b.dataset.plan; drawRoute(my); });
+  drawMap(plan);
+}
+function pointHTML(x, j, plan) {
+  const c = routeCache, s = x.s, avi = c.avi, h = x.h;
+  const isStop = s.stop != null;
+  const kind = isStop ? (s.stop === 0 ? 'Start' : s.stop === c.stops.length - 1 ? 'Destination' : 'Stop') : `Mile ${fmtInt(s.d * (c.path.factor || 1))}`;
+  const off = h ? h.off : c.off;
+  const main = x.rs.filter(r => r.lv > 0).sort((a, b) => b.lv - a.lv).slice(0, 2);
+  const notes = x.rs.filter(r => r.lv === 0).slice(0, 1);
+  let facts = '';
+  if (h) {
+    facts = avi
+      ? `<span><b class="cat-chip cat-${h.cat}">${h.cat}</b></span><span>Ceiling <b>${ceilTxt(h.ceil)}</b></span><span>Vis <b>${visTxt(h.visSm)}</b></span><span>Wind <b>${h.dir == null ? '' : pad3(h.dir) + '@'}${Math.round(h.windKt)}${h.gustKt - h.windKt >= 5 ? 'G' + Math.round(h.gustKt) : ''} kt</b></span>${h.frzFt != null ? `<span>Frz <b>${fmtInt(Math.round(h.frzFt / 100) * 100)} ft</b></span>` : ''}${s.gs ? `<span>GS <b>${Math.round(s.gs)} kt</b></span>` : ''}`
+      : `<span>${icon(wxIconKey(h.code), 16)}</span><span><b>${esc(wxText(h.code))}</b></span><span><b>${fmtInt(h.tF)}°F</b></span><span>Rain <b>${h.pop ?? '–'}%</b></span><span>Wind <b>${Math.round(h.windMph)}${h.gustMph - h.windMph >= 6 ? '–' + Math.round(h.gustMph) : ''} mph</b></span>`;
+  }
+  return `<div class="tp${isStop ? ' stopp' : ''}">
+    <div class="when">${clock(x.t, off).replace(':00 ', ' ')}<small>${localDate(x.t, off) !== plan.iso ? dayLabel(localDate(x.t, off)).wd : ''}</small></div>
+    <div class="rail"><i class="s${x.lv ?? 'na'}"></i></div>
+    <div class="body">
+      <div class="head"><div><b data-ptname="${j}">${esc(ptName(j))}</b><small>${kind}</small></div><span class="pill p${x.lv ?? 'na'}">${x.lv == null ? 'No data' : word(S.mode, x.lv)}</span></div>
+      ${main.length || notes.length ? `<ul class="reasons">${main.map(r => `<li class="l${r.lv}">${esc(r.t)}</li>`).join('')}${notes.map(r => `<li class="note">${esc(r.t)}</li>`).join('')}</ul>` : ''}
+      ${facts ? `<div class="facts">${facts}</div>` : (h ? '' : '<p class="hint">Past the forecast range.</p>')}
+    </div>
+  </div>`;
+}
+function drawMap(plan) {
+  const el = $('#map'); if (!el || typeof L === 'undefined') { el?.remove(); return; }
+  if (mapObj) { mapObj.remove(); mapObj = null; tileLayer = null; }
+  mapObj = L.map(el, {scrollWheelZoom: false, attributionControl: true});
+  setTiles();
+  const c = routeCache;
+  const css = getComputedStyle(document.documentElement);
+  const col = lv => lv == null ? css.getPropertyValue('--na') : css.getPropertyValue(['--good', '--warn', '--bad'][lv]);
+  const line = L.polyline(c.path.pts.map(p => [p.lat, p.lon]), {color: css.getPropertyValue('--accent').trim(), weight: 3, opacity: .8}).addTo(mapObj);
+  plan.tl.forEach((x, j) => {
+    const isStop = x.s.stop != null;
+    L.circleMarker([x.s.lat, x.s.lon], {radius: isStop ? 8 : 6, color: css.getPropertyValue('--surface').trim(), weight: 2, fillColor: col(x.lv).trim(), fillOpacity: 1})
+      .addTo(mapObj).bindPopup(`<b>${esc(ptName(j))}</b><br>${clock(x.t, x.h ? x.h.off : c.off)} · ${x.lv == null ? 'No data' : word(S.mode, x.lv)}${x.rs.filter(r => r.lv).slice(0, 2).map(r => '<br>' + esc(r.t)).join('')}`);
+  });
+  mapObj.fitBounds(line.getBounds(), {padding: [24, 24]});
+}
+
+/* ============================================================
+   Boot
+   ============================================================ */
+async function run() {
+  const my = ++runSeq;
+  saveState();
+  if (S.view === 'route') await runRoute(my); else await runPlaces(my);
+}
+function initControls() {
+  renderModes(); renderChips(); renderHours(); renderStops(); renderTravel();
+  $('#startDate').value = S.start; $('#endDate').value = S.end;
+  $('#startDate').min = todayISO(); $('#endDate').min = todayISO();
+  $('#depDate').value = S.route.date < todayISO() ? todayISO() : S.route.date; $('#depDate').min = todayISO(); $('#depDate').max = horizon();
+  $('#depTime').value = S.route.time; $('#compareDays').value = String(S.route.days);
+  setView(S.view);
+}
+if (S.start < todayISO()) { const len = Math.max(0, daysBetween(S.start, S.end)); S.start = todayISO(); S.end = addDays(S.start, Math.min(len, 15)); }
+initControls();
+run();
+</script>
+</body>
+</html>
